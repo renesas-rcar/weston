@@ -90,6 +90,16 @@ if test x$enable_egl = xyes; then
 	PKG_CHECK_MODULES([GL_RENDERER], [libdrm])
 fi
 
+AC_ARG_ENABLE(v4l2, [  --disable-v4l2],,
+              enable_v4l2=yes)
+AM_CONDITIONAL(ENABLE_V4L2, test x$enable_v4l2 = xyes)
+if test x$enable_v4l2 = xyes; then
+	AC_DEFINE([ENABLE_V4L2], [1], [Build Weston with V4L2 support])
+	PKG_CHECK_MODULES(LIBDRM, [libdrm])
+	PKG_CHECK_MODULES(LIBKMS, [libkms])
+	PKG_CHECK_MODULES(WAYLAND_KMS, [wayland-kms])
+fi
+
 AC_ARG_ENABLE(xkbcommon,
 	      AS_HELP_STRING([--disable-xkbcommon], [Disable libxkbcommon
 			      support: This is only useful in environments
@@ -577,6 +587,7 @@ AC_MSG_RESULT([
 
 	Cairo Renderer			${with_cairo}
 	EGL				${enable_egl}
+	V4L2				${enable_v4l2}
 	libxkbcommon			${enable_xkbcommon}
 	xcb_xkb				${have_xcb_xkb}
 	XWayland			${enable_xwayland}
