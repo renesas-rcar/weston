@@ -54,6 +54,9 @@
 
 #include <linux/input.h>
 
+/* Required for a short term workaround */
+#include "v4l2-compat.h"
+
 #if 0
 #define DBG(...) weston_log(__VA_ARGS__)
 #define DBGC(...) weston_log_continue(__VA_ARGS__)
