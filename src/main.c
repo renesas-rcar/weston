@@ -277,6 +277,7 @@ usage(int error_code)
 		"  --seat=SEAT\t\tThe seat that weston should run on\n"
 		"  --tty=TTY\t\tThe tty to use\n"
 		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
+		"  --use-v4l2\t\tUse the v4l2 renderer\n"
 		"  --current-mode\tPrefer current KMS mode over EDID preferred mode\n\n");
 #endif
 
@@ -750,6 +751,7 @@ load_drm_backend(struct weston_compositor *c, const char *backend,
 		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
 		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &config.use_current_mode },
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+		{ WESTON_OPTION_BOOLEAN, "use-v4l2", 0, &config.use_v4l2 },
 	};
 
 	parse_options(options, ARRAY_LENGTH(options), argc, argv);
