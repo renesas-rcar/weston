@@ -870,7 +870,7 @@ v4l2_renderer_output_set_buffer(struct weston_output *output, struct v4l2_bo_sta
 	vo->stride = bo->stride;
 	vo->map = bo->map;
 
-	device_interface->set_output_buffer(vo->output, bo->dmafd);
+	device_interface->set_output_buffer(vo->output, bo);
 
 	return;
 }

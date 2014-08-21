@@ -72,7 +72,7 @@ struct v4l2_device_interface {
 	struct v4l2_renderer_device *(*init)(struct media_device *media);
 
 	struct v4l2_renderer_output *(*create_output)(struct v4l2_renderer_device *dev, int width, int height);
-	void (*set_output_buffer)(struct v4l2_renderer_output *out, int dmafd); 
+	void (*set_output_buffer)(struct v4l2_renderer_output *out, struct v4l2_bo_state *bo);
 
 	struct v4l2_surface_state *(*create_surface)(struct v4l2_renderer_device *dev);
 	int (*attach_buffer)(struct v4l2_surface_state *vs);

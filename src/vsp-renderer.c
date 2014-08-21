@@ -505,8 +505,6 @@ vsp_create_output(struct v4l2_renderer_device *dev, int width, int height)
 	fmt->fmt.pix_mp.height = height;
 	fmt->fmt.pix_mp.pixelformat = V4L2_PIX_FMT_ABGR32;
 	fmt->fmt.pix_mp.num_planes = 1;
-	fmt->fmt.pix_mp.plane_fmt[0].bytesperline = width * 4; //FIXME
-	fmt->fmt.pix_mp.plane_fmt[0].sizeimage = 0;
 
 	return (struct v4l2_renderer_output*)outdev;
 }
@@ -809,11 +807,12 @@ vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *s
 }
 
 static void
-vsp_set_output_buffer(struct v4l2_renderer_output *out, int dmafd)
+vsp_set_output_buffer(struct v4l2_renderer_output *out, struct v4l2_bo_state *bo)
 {
 	struct vsp_renderer_output *output = (struct vsp_renderer_output*)out;
 	DBG("set output dmafd to %d\n", dmafd);
-	output->surface_state.base.planes[0].dmafd = dmafd;
+	output->surface_state.base.planes[0].dmafd = bo->dmafd;
+	output->surface_state.fmt.fmt.pix_mp.plane_fmt[0].bytesperline = bo->stride;
 }
 
 static uint32_t
