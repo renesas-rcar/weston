@@ -67,6 +67,8 @@
 
 struct v4l2_output_state {
 	struct v4l2_renderer_output *output;
+	uint32_t stride;
+	void *map;
 };
 
 struct v4l2_renderer {
@@ -861,11 +863,14 @@ error:
 }
 
 static void
-v4l2_renderer_output_set_buffer(struct weston_output *output, int dmafd)
+v4l2_renderer_output_set_buffer(struct weston_output *output, struct v4l2_bo_state *bo)
 {
 	struct v4l2_output_state *vo = get_output_state(output);
 
-	device_interface->set_output_buffer(vo->output, dmafd);
+	vo->stride = bo->stride;
+	vo->map = bo->map;
+
+	device_interface->set_output_buffer(vo->output, bo->dmafd);
 
 	return;
 }

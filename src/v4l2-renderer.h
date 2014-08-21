@@ -27,9 +27,15 @@
 
 #include "compositor.h"
 
+struct v4l2_bo_state {
+	int dmafd;
+	void *map;
+	uint32_t stride;
+};
+
 struct v4l2_renderer_interface {
 	int (*init)(struct weston_compositor *ec, int drm_fd, char *drm_fn);
 	int (*output_create)(struct weston_output *output);
 	void (*output_destroy)(struct weston_output *output);
-	void (*set_output_buffer)(struct weston_output *output, int dma_fd);
+	void (*set_output_buffer)(struct weston_output *output, struct v4l2_bo_state *ro);
 };

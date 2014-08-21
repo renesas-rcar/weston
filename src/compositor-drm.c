@@ -564,6 +564,7 @@ drm_output_render_pixman(struct drm_output *output, pixman_region32_t *damage)
 {
 	struct weston_compositor *ec = output->base.compositor;
 	pixman_region32_t total_damage, previous_damage;
+	struct v4l2_bo_state bo;
 
 	pixman_region32_init(&total_damage);
 	pixman_region32_init(&previous_damage);
@@ -601,9 +602,12 @@ drm_output_render_v4l2(struct drm_output *output, pixman_region32_t *damage)
 
 	output->current_image ^= 1;
 
+	bo.dmafd = output->dumb[output->current_image]->dmafd;
+	bo.map = output->dumb[output->current_image]->map;
+	bo.stride = output->dumb[output->current_image]->stride;
+
 	output->next = output->dumb[output->current_image];
-	v4l2_renderer->set_output_buffer(&output->base,
-					 output->dumb[output->current_image]->dmafd);
+	v4l2_renderer->set_output_buffer(&output->base, &bo);
 
 	ec->renderer->repaint_output(&output->base, &total_damage);
 
