@@ -121,9 +121,35 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 			 uint32_t x, uint32_t y,
 			 uint32_t width, uint32_t height)
 {
-	// struct v4l2_output_state *vo = get_output_state(output);
+	struct v4l2_output_state *vo = get_output_state(output);
+	uint32_t v, len = width * 4, stride = vo->stride * 4;
+	void *src, *dst;
 
-	// TODO: we need to implement this... maybe later.
+	switch(format) {
+	case PIXMAN_a8r8g8b8:
+		break;
+	default:
+		return -1;
+	}
+
+	if (x == 0 && y == 0 &&
+	    width == (uint32_t)output->current_mode->width &&
+	    height == (uint32_t)output->current_mode->height &&
+	    vo->stride == len) {
+		DBG("%s: copy entire buffer at once\n", __func__);
+		// TODO: we may want to optimize this using underlying
+		// V4L2 MC hardware if possible.
+		memcpy(pixels, vo->map, vo->stride * height);
+		return 0;
+	}
+
+	src = vo->map + x * 4 + y * stride;
+	dst = pixels;
+	for (v = y; v < height; v++) {
+		memcpy(dst, src, len);
+		src += stride;
+		dst += len;
+	}
 
 	return 0;
 }
