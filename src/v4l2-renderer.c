@@ -276,6 +276,8 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	vs->dst_rect.top = dst_y;
 	vs->dst_rect.left = dst_x;
 
+	vs->alpha = ev->alpha;
+
 	DBG("monitor: %dx%d@(%d,%d)\n", output->width, output->height, output->x, output->y);
 	DBG("composing from %dx%d@(%d,%d) to %dx%d@(%d,%d)\n",
 	    src_width, src_height, src_x, src_y,

@@ -56,6 +56,7 @@ struct v4l2_surface_state {
 	int num_planes;
 	struct v4l2_renderer_plane planes[VIDEO_MAX_PLANES];
 
+	float alpha;
 	int width;
 	int height;
 	unsigned int pixel_format;
