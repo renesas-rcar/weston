@@ -43,6 +43,7 @@
 #include "v4l2-renderer-device.h"
 
 #include "media-ctl/mediactl.h"
+#include "media-ctl/mediactl-priv.h"
 #include "media-ctl/v4l2subdev.h"
 #include "media-ctl/tools.h"
 
@@ -117,10 +118,18 @@ const char *vsp_input_composer[] = {
 	"'%s bru':3"
 };
 
+const char *vsp_input_subdev[] = {
+	"%s rpf.0",
+	"%s rpf.1",
+	"%s rpf.2",
+	"%s rpf.3"
+};
+
 struct vsp_media_pad {
 	struct media_pad	*infmt_pad;
 	struct media_pad	*outfmt_pad;
 	struct media_pad	*compose_pad;
+	struct media_entity	*input_entity;
 
 	struct media_link	*link;
 
@@ -274,6 +283,13 @@ vsp_init(struct media_device *media)
 		weston_log("get a composer pad: '%s'\n", buf);
 		if (!(vsp->input_pads[i].compose_pad = media_parse_pad(media, buf, NULL))) {
 			weston_log("parse pad failed.\n");
+			goto error;
+		}
+
+		snprintf(buf, sizeof(buf), vsp_input_subdev[i], device_name);
+		weston_log("get a input subdev pad: '%s'\n", buf);
+		if (!(vsp->input_pads[i].input_entity = media_get_entity_by_name(media, buf, strlen(buf)))) {
+			weston_log("parse entity failed.\n");
 			goto error;
 		}
 
@@ -602,6 +618,24 @@ vsp_comp_begin(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *ou
 }
 
 static int
+vsp_set_alpha(struct media_entity *entity, float alpha)
+{
+	struct v4l2_control ctrl;
+
+	ctrl.id = V4L2_CID_ALPHA_COMPONENT;
+	ctrl.value = (__s32)(alpha * 0xff);
+
+	weston_log("setting to %f(%d)\n", alpha, ctrl.value);
+
+	if (ioctl(entity->fd, VIDIOC_S_CTRL, &ctrl) == -1) {
+		weston_log("failed to set alpha value (%d)\n", ctrl.value);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int
 vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct vsp_surface_state *vs, int enable)
 {
 	struct v4l2_mbus_framefmt format;
@@ -622,6 +656,12 @@ vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct
 	if (v4l2_subdev_set_format(mpad->infmt_pad->entity, &format, mpad->infmt_pad->index,
 				   V4L2_SUBDEV_FORMAT_ACTIVE)) {
 		weston_log("set input format via subdev failed.\n");
+		return -1;
+	}
+
+	// set an alpha
+	if (vsp_set_alpha(mpad->input_entity, vs->base.alpha)) {
+		weston_log("setting alpha (=%f) failed.", vs->base.alpha);
 		return -1;
 	}
 
@@ -770,10 +810,12 @@ vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *s
 		return -1;
 	}
 
-	DBG("set input %d (dmafd=%d): %dx%d@(%d,%d).\n", vsp->input_count,
+	DBG("set input %d (dmafd=%d): %dx%d@(%d,%d). alpha=%f\n",
+	    vsp->input_count,
 	    vs->base.planes[0].dmafd,
 	    vs->base.dst_rect.width, vs->base.dst_rect.height,
-	    vs->base.dst_rect.left, vs->base.dst_rect.top);
+	    vs->base.dst_rect.left, vs->base.dst_rect.top,
+	    vs->base.alpha);
 
 	switch(vsp->state) {
 	case VSP_STATE_START:
