@@ -301,14 +301,13 @@ vsp_init(struct media_device *media)
 			goto error;
 		}
 
-		devname = media_entity_get_devname(entity);
-		weston_log("input '%s' is associated with '%s'\n", buf, devname);
-		vsp->input_pads[i].fd = open(devname, O_RDWR);
-		if (vsp->input_pads[i].fd < 0) {
-			weston_log("error... can't open '%s'.\n", devname);
+		if (v4l2_subdev_open(entity)) {
+			weston_log("subdev '%s' open failed\n.", buf);
 			goto error;
 		}
-		vsp_check_capabiility(vsp->input_pads[i].fd, devname);
+
+		vsp->input_pads[i].fd = entity->fd;
+		vsp_check_capabiility(vsp->input_pads[i].fd, media_entity_get_devname(entity));
 	}
 
 	/* Initialize output */
