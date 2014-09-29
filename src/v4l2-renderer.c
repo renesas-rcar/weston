@@ -170,6 +170,14 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	struct weston_vector p2 = {{ 0.0f, 0.0f, 0.0f, 1.0f }};	// right-bot
 
 	/*
+	 * Check if the surface is still valid. OpenGL/ES apps may destroy
+	 * buffers before they destroy a surface. This check works in the
+	 * serialized world only.
+	 */
+	if (fcntl(vs->planes[0].dmafd, F_GETFD) < 0)
+		return;
+
+	/*
 	 * TODO: We should consider if we make use of 'damage' region.
 	 * In order to do partial update with 'damage', we should
 	 * compose the region with the previous output.
