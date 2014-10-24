@@ -57,6 +57,13 @@
 #include <libmediactl-v4l2/v4l2subdev.h>
 #include <libmediactl-v4l2/tools.h>
 
+#ifdef V4L2_GL_FALLBACK
+#include <dlfcn.h>
+#include <gbm.h>
+#include <gbm_kmsint.h>
+#include "gl-renderer.h"
+#endif
+
 #include <linux/input.h>
 
 #if 0
@@ -78,6 +85,10 @@ struct v4l2_output_state {
 	struct v4l2_bo_state *bo;
 	int bo_count;
 	int bo_index;
+#ifdef V4L2_GL_FALLBACK
+	void *gl_renderer_state;
+	struct gbm_surface *gbm_surface;
+#endif
 };
 
 struct v4l2_renderer {
@@ -96,9 +107,17 @@ struct v4l2_renderer {
 	struct weston_binding *debug_binding;
 
 	struct wl_signal destroy_signal;
+
+#ifdef V4L2_GL_FALLBACK
+	int gl_fallback;
+	int defer_attach;
+	struct gbm_device *gbm;
+	struct weston_renderer *gl_renderer;
+#endif
 };
 
 static struct v4l2_device_interface *device_interface = NULL;
+static struct gl_renderer_interface *gl_renderer;
 
 static inline struct v4l2_output_state *
 get_output_state(struct weston_output *output)
@@ -124,6 +143,281 @@ get_renderer(struct weston_compositor *ec)
 	return (struct v4l2_renderer *)ec->renderer;
 }
 
+#ifdef V4L2_GL_FALLBACK
+static struct gbm_device *
+v4l2_create_gbm_device(int fd)
+{
+	struct gbm_device *gbm;
+
+	gl_renderer = weston_load_module("gl-renderer.so",
+					 "gl_renderer_interface");
+	if (!gl_renderer)
+		return NULL;
+
+	/* GBM will load a dri driver, but even though they need symbols from
+	 * libglapi, in some version of Mesa they are not linked to it. Since
+	 * only the gl-renderer module links to it, the call above won't make
+	 * these symbols globally available, and loading the DRI driver fails.
+	 * Workaround this by dlopen()'ing libglapi with RTLD_GLOBAL. */
+	dlopen("libglapi.so.0", RTLD_LAZY | RTLD_GLOBAL);
+
+	gbm = gbm_create_device(fd);
+
+	return gbm;
+}
+
+static void
+v4l2_destroy_gbm_device(struct gbm_device *gbm)
+{
+	if (gbm)
+		gbm_device_destroy(gbm);
+}
+
+static int
+v4l2_create_gl_renderer(struct weston_compositor *ec, struct v4l2_renderer *renderer)
+{
+	EGLint format = GBM_FORMAT_XRGB8888;
+
+	if (gl_renderer->create(ec, EGL_PLATFORM_GBM_KHR, renderer->gbm,
+				gl_renderer->opaque_attribs, &format, 1) < 0) {
+		return -1;
+	}
+	renderer->gl_renderer = ec->renderer;
+
+	return 0;
+}
+
+static int
+v4l2_init_gl_output(struct weston_output *output, struct v4l2_renderer *renderer)
+{
+	EGLint format = GBM_FORMAT_XRGB8888;
+	struct v4l2_output_state *state = get_output_state(output);
+	int i;
+	pixman_format_code_t read_format;
+
+	state->gbm_surface = gbm_surface_create(renderer->gbm,
+						output->current_mode->width,
+						output->current_mode->height,
+						format,
+						GBM_BO_USE_SCANOUT |
+						GBM_BO_USE_RENDERING |
+						GBM_BO_CREATE_EMPTY);
+
+	if (!state->gbm_surface) {
+		weston_log("%s: failed to create gbm surface\n", __func__);
+		return -1;
+	}
+
+	for (i = 0; i < 2; i++) {
+		int n = i % state->bo_count;
+		gbm_kms_set_bo((struct gbm_kms_surface *)state->gbm_surface,
+			       n, state->bo[n].map, state->bo[n].stride);
+	}
+
+	output->compositor->renderer = renderer->gl_renderer;
+	output->renderer_state = NULL;
+	read_format = output->compositor->read_format;
+	if (gl_renderer->output_create(output,
+				       (EGLNativeDisplayType)state->gbm_surface,
+				       state->gbm_surface,
+				       gl_renderer->opaque_attribs,
+				       &format, 1) < 0) {
+		weston_log("%s: failed to create gl renderer output state\n", __func__);
+		gbm_surface_destroy(state->gbm_surface);
+		return -1;
+	}
+	output->compositor->read_format = read_format;
+	state->gl_renderer_state = output->renderer_state;
+	output->renderer_state = state;
+	output->compositor->renderer = &renderer->base;
+
+	return 0;
+}
+
+static void
+v4l2_gl_output_destroy(struct weston_output *output,
+		       struct v4l2_renderer *renderer)
+{
+	struct v4l2_output_state *state = get_output_state(output);
+	output->compositor->renderer = renderer->gl_renderer;
+	output->renderer_state = state->gl_renderer_state;
+	gl_renderer->output_destroy(output);
+	output->renderer_state = state;
+	output->compositor->renderer = &renderer->base;
+}
+
+static void
+v4l2_gl_flush_damage(struct weston_surface *surface)
+{
+	struct v4l2_surface_state *vs = get_surface_state(surface);
+	struct v4l2_renderer *renderer = vs->renderer;
+
+	surface->compositor->renderer = renderer->gl_renderer;
+	surface->renderer_state = vs->gl_renderer_state;
+
+	renderer->gl_renderer->flush_damage(surface);
+
+	vs->gl_renderer_state = surface->renderer_state;
+	surface->renderer_state = vs;
+	surface->compositor->renderer = &renderer->base;
+}
+
+static void
+v4l2_gl_surface_cleanup(struct v4l2_surface_state *vs)
+{
+	struct v4l2_renderer *renderer = vs->renderer;
+
+	wl_list_remove(&vs->surface_post_destroy_listener.link);
+	wl_list_remove(&vs->renderer_post_destroy_listener.link);
+
+	vs->surface->compositor->renderer = &vs->renderer->base;
+	vs->surface->renderer_state = NULL;
+
+	if (renderer->defer_attach)
+		pixman_region32_fini(&vs->damage);
+
+	free(vs);
+}
+
+static void
+v4l2_gl_surface_post_destroy(struct wl_listener *listener, void *data)
+{
+	struct v4l2_surface_state *vs;
+	vs = container_of(listener, struct v4l2_surface_state,
+			  surface_post_destroy_listener);
+	v4l2_gl_surface_cleanup(vs);
+}
+
+static void
+v4l2_gl_renderer_post_destroy(struct wl_listener *listener, void *data)
+{
+	struct v4l2_surface_state *vs;
+	vs = container_of(listener, struct v4l2_surface_state,
+			  renderer_post_destroy_listener);
+	v4l2_gl_surface_cleanup(vs);
+}
+
+static void
+v4l2_gl_attach(struct weston_surface *surface, struct weston_buffer *buffer)
+{
+	struct v4l2_surface_state *vs = get_surface_state(surface);
+	struct v4l2_renderer *renderer = vs->renderer;
+
+	surface->compositor->renderer = renderer->gl_renderer;
+	surface->renderer_state = vs->gl_renderer_state;
+
+	renderer->gl_renderer->attach(surface, buffer);
+
+	vs->gl_renderer_state = surface->renderer_state;
+	surface->renderer_state = vs;
+	surface->compositor->renderer = &renderer->base;
+
+	if ((buffer) && (vs->surface_type != V4L2_SURFACE_GL_ATTACHED)) {
+		vs->surface_post_destroy_listener.notify = v4l2_gl_surface_post_destroy;
+		wl_signal_add(&surface->destroy_signal, &vs->surface_post_destroy_listener);
+
+		vs->renderer_post_destroy_listener.notify = v4l2_gl_renderer_post_destroy;
+		wl_signal_add(&renderer->destroy_signal, &vs->renderer_post_destroy_listener);
+
+		vs->surface_type = V4L2_SURFACE_GL_ATTACHED;
+	}
+}
+
+struct stack {
+	int stack_size;
+	int element_size;
+	void *stack;
+};
+
+#define V4L2_STACK_INIT(size) { .stack_size = 0, .element_size = (size), .stack = NULL }
+
+static int
+v4l2_stack_realloc(struct stack *stack, int target_size)
+{
+	if (target_size > stack->stack_size)
+		target_size += 8;
+	else if (target_size < stack->stack_size / 2)
+		target_size = stack->stack_size / 2 + 1;
+	else
+		target_size = 0;
+
+	if (target_size) {
+		stack->stack = realloc(stack->stack, target_size * stack->element_size);
+
+		if (!stack->stack) {
+			weston_log("can't allocate memory for a stack. can't continue.\n");
+			return -1;
+		}
+
+		stack->stack_size = target_size;
+	}
+
+	return 0;
+}
+
+static void
+v4l2_gl_repaint(struct weston_output *output,
+		pixman_region32_t *output_damage)
+{
+	struct weston_compositor *ec = output->compositor;
+	struct v4l2_renderer *renderer = get_renderer(ec);
+	struct v4l2_output_state *state = get_output_state(output);
+	struct weston_view *ev;
+	int view_count, i;
+	static struct stack stacker = V4L2_STACK_INIT(sizeof(void *));
+	void **stack;
+
+	if (v4l2_stack_realloc(&stacker, wl_list_length(&ec->view_list)) < 0)
+		return;
+	stack = (void**)stacker.stack;
+
+	view_count = 0;
+	wl_list_for_each(ev, &ec->view_list, link) {
+		struct v4l2_surface_state *vs = get_surface_state(ev->surface);
+
+		if (renderer->defer_attach) {
+			if (vs->notify_attach == 1) {
+				DBG("%s: attach gl\n", __func__);
+				v4l2_gl_attach(ev->surface, vs->buffer_ref.buffer);
+				vs->notify_attach = 0;
+			}
+			if (vs->flush_damage) {
+				DBG("%s: flush damage\n", __func__);
+				pixman_region32_copy(&ev->surface->damage, &vs->damage);
+				v4l2_gl_flush_damage(ev->surface);
+				vs->flush_damage = 0;
+				pixman_region32_clear(&ev->surface->damage);
+			}
+		}
+
+		stack[view_count++] = vs;
+	}
+
+	for (i = 0; i < view_count; i++) {
+		struct v4l2_surface_state *vs = stack[i];
+		if (vs->state_type == V4L2_RENDERER_STATE_V4L2) {
+			vs->surface->renderer_state = vs->gl_renderer_state;
+			vs->state_type = V4L2_RENDERER_STATE_GL;
+		}
+	}
+
+	ec->renderer = renderer->gl_renderer;
+	output->renderer_state = state->gl_renderer_state;
+	renderer->gl_renderer->repaint_output(output, output_damage);
+	ec->renderer = &renderer->base;
+	output->renderer_state = state;
+
+	view_count = 0;
+	wl_list_for_each(ev, &ec->view_list, link) {
+		struct v4l2_surface_state *vs = stack[view_count++];
+		if (vs->state_type == V4L2_RENDERER_STATE_GL) {
+			ev->surface->renderer_state = vs;
+			vs->state_type = V4L2_RENDERER_STATE_V4L2;
+		}
+	}
+}
+#endif
+
 static int
 v4l2_renderer_read_pixels(struct weston_output *output,
 			 pixman_format_code_t format, void *pixels,
@@ -141,6 +435,19 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 	default:
 		return -1;
 	}
+
+#ifdef V4L2_GL_FALLBACK
+	if (output->compositor->capabilities & WESTON_CAP_CAPTURE_YFLIP) {
+		src = bo->map + x * 4 + y * bo->stride;
+		dst = pixels + len * (height - 1);
+		for (v = y; v < height; v++) {
+			memcpy(dst, src, len);
+			src += bo->stride;
+			dst -= len;
+		}
+		return 0;
+	}
+#endif
 
 	if (x == 0 && y == 0 &&
 	    width == (uint32_t)output->current_mode->width &&
@@ -501,21 +808,83 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 	device_interface->finish_compose(renderer->device);
 }
 
+#ifdef V4L2_GL_FALLBACK
+static int
+can_repaint(struct weston_compositor *c, pixman_region32_t *output_region)
+{
+	struct weston_view *ev;
+	pixman_region32_t region;
+	int need_repaint, view_count;
+	static struct stack stacker = V4L2_STACK_INIT(sizeof(struct v4l2_view));
+	struct v4l2_view *view_list;
+
+	DBG("%s: checking...\n", __func__);
+
+	/* we don't bother checking, if can_compose is not defined */
+	if (!device_interface->can_compose)
+		return 1;
+
+	/* if stack realloc fails, there's not many things we can do... */
+	if (v4l2_stack_realloc(&stacker, wl_list_length(&c->view_list)) < 0)
+		return 1;
+	view_list = (struct v4l2_view *)stacker.stack;
+
+	view_count = 0;
+	wl_list_for_each(ev, &c->view_list, link) {
+		/* in the primary plane? */
+		if (ev->plane != &c->primary_plane)
+			continue;
+
+		/* a surface in the repaint area? */
+		pixman_region32_init(&region);
+		pixman_region32_intersect(&region,
+					  &ev->transform.boundingbox,
+					  output_region);
+		pixman_region32_subtract(&region, &region, &ev->clip);
+		need_repaint = pixman_region32_not_empty(&region);
+		pixman_region32_fini(&region);
+
+		if (need_repaint) {
+			struct v4l2_surface_state *vs = get_surface_state(ev->surface);
+			view_list[view_count].view = ev;
+			view_list[view_count].state = vs;
+			view_count++;
+		}
+	}
+
+	return device_interface->can_compose(view_list, view_count);
+}
+#endif
+
 static void
 v4l2_renderer_repaint_output(struct weston_output *output,
 			    pixman_region32_t *output_damage)
 {
-	//struct v4l2_output_state *vo = get_output_state(output);
+#ifdef V4L2_GL_FALLBACK
+	struct v4l2_output_state *vo = get_output_state(output);
+	struct weston_compositor *compositor = output->compositor;
+	struct v4l2_renderer *renderer = (struct v4l2_renderer*)compositor->renderer;
+#endif
 	DBG("%s\n", __func__);
 
-	// render all views
-	repaint_surfaces(output, output_damage);
+#ifdef V4L2_GL_FALLBACK
+	if ((!renderer->gl_fallback) || (can_repaint(output->compositor, &output->region))) {
+#endif
+		// render all views
+		repaint_surfaces(output, output_damage);
 
-	// remember the damaged area
-	pixman_region32_copy(&output->previous_damage, output_damage);
+		// remember the damaged area
+		pixman_region32_copy(&output->previous_damage, output_damage);
 
-	// emits signal
-	wl_signal_emit(&output->frame_signal, output);
+		// emits signal
+		wl_signal_emit(&output->frame_signal, output);
+#ifdef V4L2_GL_FALLBACK
+	} else {
+		gbm_kms_set_front((struct gbm_kms_surface *)vo->gbm_surface, (!vo->bo_index));
+
+		v4l2_gl_repaint(output, output_damage);
+	}
+#endif
 
 	/* Actual flip should be done by caller */
 }
@@ -556,6 +925,18 @@ v4l2_renderer_flush_damage(struct weston_surface *surface)
 	 * TODO: We may consider use of surface->damage to
 	 * optimize updates.
 	 */
+
+#ifdef V4L2_GL_FALLBACK
+	if (vs->renderer->gl_fallback) {
+		if (vs->renderer->defer_attach) {
+			DBG("%s: set flush damage flag.\n", __func__);
+			vs->flush_damage = 1;
+			pixman_region32_copy(&vs->damage, &surface->damage);
+		} else {
+			v4l2_gl_flush_damage(surface);
+		}
+	}
+#endif
 }
 
 static void
@@ -1041,6 +1422,18 @@ v4l2_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 		wl_signal_add(&buffer->destroy_signal,
 			      &vs->buffer_destroy_listener);
 	}
+
+#ifdef V4L2_GL_FALLBACK
+	if (vs->renderer->gl_fallback) {
+		if (vs->renderer->defer_attach) {
+			if (!vs->notify_attach)
+				v4l2_gl_attach(es, NULL);
+			vs->notify_attach = 1;
+		} else {
+			v4l2_gl_attach(es, buffer);
+		}
+	}
+#endif
 }
 
 static void
@@ -1053,8 +1446,6 @@ v4l2_renderer_surface_state_destroy(struct v4l2_surface_state *vs)
 		vs->buffer_destroy_listener.notify = NULL;
 	}
 
-	vs->surface->renderer_state = NULL;
-
 	if (vs->dmabuf_buffer_destroy_listener.notify) {
 		wl_list_remove(&vs->dmabuf_buffer_destroy_listener.link);
 		vs->dmabuf_buffer_destroy_listener.notify = NULL;
@@ -1063,7 +1454,17 @@ v4l2_renderer_surface_state_destroy(struct v4l2_surface_state *vs)
 	// TODO: Release any resources associated to the surface here.
 
 	weston_buffer_reference(&vs->buffer_ref, NULL);
-	free(vs);
+#ifdef V4L2_GL_FALLBACK
+	if (vs->surface_type == V4L2_SURFACE_GL_ATTACHED) {
+		vs->surface->compositor->renderer = vs->renderer->gl_renderer;
+		vs->surface->renderer_state = vs->gl_renderer_state;
+	} else {
+#endif
+		vs->surface->renderer_state = NULL;
+		free(vs);
+#ifdef V4L2_GL_FALLBACK
+	}
+#endif
 }
 
 static void
@@ -1113,6 +1514,12 @@ v4l2_renderer_create_surface(struct weston_surface *surface)
 	wl_signal_add(&vr->destroy_signal,
 		      &vs->renderer_destroy_listener);
 
+#ifdef V4L2_GL_FALLBACK
+	vs->surface_type = V4L2_SURFACE_DEFAULT;
+	vs->notify_attach = -1;
+	if (vr->defer_attach)
+		pixman_region32_init(&vs->damage);
+#endif
 	return 0;
 }
 
@@ -1137,6 +1544,8 @@ v4l2_renderer_destroy(struct weston_compositor *ec)
 	wl_signal_emit(&vr->destroy_signal, vr);
 	weston_binding_destroy(vr->debug_binding);
 	free(vr);
+
+	// TODO: release gl-renderer here.
 
 	ec->renderer = NULL;
 }
@@ -1248,6 +1657,10 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 	section = weston_config_get_section(ec->config,
 					    "media-ctl", NULL, NULL);
 	weston_config_section_get_string(section, "device", &device, "/dev/media0");
+#ifdef V4L2_GL_FALLBACK
+	weston_config_section_get_bool(section, "gl-fallback", &renderer->gl_fallback, 0);
+	weston_config_section_get_bool(section, "defer-attach", &renderer->defer_attach, 0);
+#endif
 
 	/* Initialize V4L2 media controller */
 	renderer->media = media_device_new(device);
@@ -1313,6 +1726,20 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 	renderer->base.surface_set_color = v4l2_renderer_surface_set_color;
 	renderer->base.destroy = v4l2_renderer_destroy;
 	renderer->base.import_dmabuf = v4l2_renderer_import_dmabuf;
+
+#ifdef V4L2_GL_FALLBACK
+	if (renderer->gl_fallback) {
+		/* we now initialize gl-renderer for fallback */
+		renderer->gbm = v4l2_create_gbm_device(drm_fd);
+		if (renderer->gbm) {
+			if (v4l2_create_gl_renderer(ec, renderer) < 0) {
+				weston_log("GL Renderer fallback failed to initialize.\n");
+				v4l2_destroy_gbm_device(renderer->gbm);
+				renderer->gbm = NULL;
+			}
+		}
+	}
+#endif
 
 	ec->renderer = &renderer->base;
 	ec->capabilities |= device_interface->get_capabilities();
@@ -1389,6 +1816,14 @@ v4l2_renderer_output_create(struct weston_output *output, struct v4l2_bo_state *
 		vo->bo[i] = bo_states[i];
 	vo->bo_count = count;
 
+#ifdef V4L2_GL_FALLBACK
+	if ((renderer->gl_fallback) && (v4l2_init_gl_output(output, renderer) < 0)) {
+		// error...
+		weston_log("Can't initialize gl-renderer. Disabling gl-fallback.\n");
+		renderer->gl_fallback = 0;
+	}
+#endif
+
 	return 0;
 }
 
@@ -1396,6 +1831,15 @@ static void
 v4l2_renderer_output_destroy(struct weston_output *output)
 {
 	struct v4l2_output_state *vo = get_output_state(output);
+
+#ifdef V4L2_GL_FALLBACK
+	struct v4l2_renderer *renderer =
+		(struct v4l2_renderer*)output->compositor->renderer;
+
+	if (renderer->gl_fallback)
+		v4l2_gl_output_destroy(output, renderer);
+#endif
+
 	if (vo->bo)
 		free(vo->bo);
 	if (vo->output)

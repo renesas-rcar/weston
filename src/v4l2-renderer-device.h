@@ -27,6 +27,11 @@
 
 #include "compositor.h"
 
+/*
+ * Enable gl-fallback feature.
+ */
+#define V4L2_GL_FALLBACK
+
 struct v4l2_renderer_device {
 	struct media_device *media;
 	const char *device_name;
@@ -43,6 +48,23 @@ struct v4l2_renderer_plane {
 	unsigned int length;
 	unsigned int bytesused;
 };
+
+#ifdef V4L2_GL_FALLBACK
+typedef enum {
+	V4L2_SURFACE_DEFAULT,
+	V4L2_SURFACE_GL_ATTACHED
+} v4l2_surface_t;
+
+struct v4l2_view {
+	struct weston_view *view;
+	struct v4l2_surface_state *state;
+};
+
+typedef enum {
+	V4L2_RENDERER_STATE_V4L2,
+	V4L2_RENDERER_STATE_GL
+} v4l2_renderer_state_t;
+#endif
 
 struct v4l2_surface_state {
 	struct weston_surface *surface;
@@ -73,6 +95,19 @@ struct v4l2_surface_state {
 	struct wl_listener surface_destroy_listener;
 	struct wl_listener renderer_destroy_listener;
 	struct wl_listener dmabuf_buffer_destroy_listener;
+
+#ifdef V4L2_GL_FALLBACK
+	void *gl_renderer_state;
+
+	v4l2_surface_t surface_type;
+	v4l2_renderer_state_t state_type;
+	int notify_attach;
+	int flush_damage;
+	pixman_region32_t damage;
+
+	struct wl_listener surface_post_destroy_listener;
+	struct wl_listener renderer_post_destroy_listener;
+#endif
 };
 
 struct v4l2_device_interface {
@@ -87,6 +122,9 @@ struct v4l2_device_interface {
 	void (*begin_compose)(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *out);
 	void (*finish_compose)(struct v4l2_renderer_device *dev);
 	int (*draw_view)(struct v4l2_renderer_device *dev, struct v4l2_surface_state *vs);
+#ifdef V4L2_GL_FALLBACK
+	int (*can_compose)(struct v4l2_view *view_list, int count);
+#endif
 
 	uint32_t (*get_capabilities)(void);
 };
