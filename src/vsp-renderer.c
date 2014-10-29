@@ -1112,6 +1112,19 @@ vsp_set_output_buffer(struct v4l2_renderer_output *out, struct v4l2_bo_state *bo
 	output->surface_state.fmt.fmt.pix_mp.plane_fmt[0].bytesperline = bo->stride;
 }
 
+#ifdef V4L2_GL_FALLBACK
+static int
+vsp_can_compose(struct v4l2_surface_state *vs)
+{
+	switch(vs->pixel_format) {
+	case V4L2_PIX_FMT_ABGR32:
+		if (vs->alpha != 1.0)
+			return 0;
+	}
+	return 1;
+}
+#endif
+
 static uint32_t
 vsp_get_capabilities(void)
 {
@@ -1130,6 +1143,10 @@ WL_EXPORT struct v4l2_device_interface v4l2_device_interface = {
 	.begin_compose = vsp_comp_begin,
 	.finish_compose = vsp_comp_finish,
 	.draw_view = vsp_comp_draw_view,
+
+#ifdef V4L2_GL_FALLBACK
+	.can_compose = vsp_can_compose,
+#endif
 
 	.get_capabilities = vsp_get_capabilities,
 };
