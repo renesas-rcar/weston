@@ -921,9 +921,26 @@ vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *s
 		return -1;
 	}
 
-	DBG("set input %d (dmafd=%d): %dx%d@(%d,%d). alpha=%f\n",
+	if (vs->base.src_rect.width < 1 || vs->base.src_rect.height < 1) {
+		weston_log("ignoring the size of zeros < (%dx%d)\n", vs->base.src_rect.width, vs->base.src_rect.height);
+		return -1;
+	}
+
+	if (vs->base.src_rect.left < 0) {
+		vs->base.src_rect.width += vs->base.src_rect.left;
+		vs->base.src_rect.left = 0;
+	}
+
+	if (vs->base.src_rect.top < 0) {
+		vs->base.src_rect.height += vs->base.src_rect.top;
+		vs->base.src_rect.top = 0;
+	}
+
+	DBG("set input %d (dmafd=%d): %dx%d@(%d,%d)->%dx%d@(%d,%d). alpha=%f\n",
 	    vsp->input_count,
 	    vs->base.planes[0].dmafd,
+	    vs->base.src_rect.width, vs->base.src_rect.height,
+	    vs->base.src_rect.left, vs->base.src_rect.top,
 	    vs->base.dst_rect.width, vs->base.dst_rect.height,
 	    vs->base.dst_rect.left, vs->base.dst_rect.top,
 	    vs->base.alpha);
