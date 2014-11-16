@@ -452,6 +452,9 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	pixman_region32_t surface_blend;
 	pixman_box32_t *region;
 
+	if (vs->planes[0].dmafd == 0)
+		return;
+
 	/*
 	 * Check if the surface is still valid. OpenGL/ES apps may destroy
 	 * buffers before they destroy a surface. This check works in the
