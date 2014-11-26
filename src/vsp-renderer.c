@@ -746,6 +746,17 @@ vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct
 		return -1;
 	}
 
+	// set a crop paramters
+	if (v4l2_subdev_set_selection(mpad->infmt_pad->entity, &vs->base.src_rect, mpad->infmt_pad->index,
+				      V4L2_SEL_TGT_CROP, V4L2_SUBDEV_FORMAT_ACTIVE)) {
+		weston_log("set crop parameter failed: %dx%d@(%d,%d).\n",
+			   vs->base.src_rect.width, vs->base.src_rect.height,
+			   vs->base.src_rect.left, vs->base.src_rect.top);
+		return -1;
+	}
+	format.width = vs->base.src_rect.width;
+	format.height = vs->base.src_rect.height;
+
 	// this is an output towards BRU. this shall be consistent among all inputs.
 	format.code = V4L2_MBUS_FMT_ARGB8888_1X32;
 	if (v4l2_subdev_set_format(mpad->outfmt_pad->entity, &format, mpad->outfmt_pad->index,
@@ -779,17 +790,6 @@ vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct
 		weston_log("set composition format via subdev failed.\n");
 		return -1;
 	}
-
-#if 0
-	// set a crop paramters
-	if (v4l2_subdev_set_selection(mpad->compose_pad->entity, &vs->base.src_rect, mpad->compose_pad->index,
-				      V4L2_SEL_TGT_CROP, V4L2_SUBDEV_FORMAT_ACTIVE)) {
-		weston_log("set crop parameter failed: %dx%d@(%d,%d).\n",
-			   vs->base.src_rect.width, vs->base.src_rect.height,
-			   vs->base.src_rect.left, vs->base.src_rect.top);
-		return -1;
-	}
-#endif
 
 	// set a composition paramters
 	if (v4l2_subdev_set_selection(mpad->compose_pad->entity, &vs->base.dst_rect, mpad->compose_pad->index,
