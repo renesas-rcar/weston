@@ -269,7 +269,6 @@ int media_setup_link(struct media_device *media,
 	ret = 0;
 
 done:
-	media_device_close(media);
 	return ret;
 }
 
@@ -614,7 +613,6 @@ int media_device_enumerate(struct media_device *media)
 	ret = 0;
 
 done:
-	media_device_close(media);
 	return ret;
 }
 
