@@ -520,7 +520,7 @@ vsp_set_output(struct vsp_device *vsp, struct vsp_renderer_output *out)
 	char buf[64];
 	int i;
 	struct media_pad *pad;
-	struct v4l2_mbus_framefmt format, format2;
+	struct v4l2_mbus_framefmt format;
 	static char *pads[] = {
 		"'%s bru':4",
 		"'%s wpf.0':0",
@@ -541,15 +541,6 @@ vsp_set_output(struct vsp_device *vsp, struct vsp_renderer_output *out)
 		if (v4l2_subdev_set_format(pad->entity, &format, pad->index, V4L2_SUBDEV_FORMAT_ACTIVE)) {
 			weston_log("set sbudev format for %s failed.\n", buf);
 			return -1;
-		}
-
-		if (v4l2_subdev_get_format(pad->entity, &format2, pad->index, V4L2_SUBDEV_FORMAT_ACTIVE)) {
-			weston_log("get sbudev format for %s failed.\n", buf);
-			return -1;
-		}
-
-		if ((format.width != format2.width) || (format.height != format2.height) || (format.code != format2.code)) {
-			weston_log("set format doesn't match: '%s'!", buf);
 		}
 	}
 
