@@ -126,6 +126,12 @@ const char *vsp_input_subdev[] = {
 	"%s rpf.3"
 };
 
+const char *vsp_output_fmt[] = {
+	"'%s bru':4",
+	"'%s wpf.0':0",
+	"'%s wpf.0':1"
+};
+
 const char *vsp_scaler_links[] = {
 	"'%s rpf.%d':1 -> '%s uds.%d':0",
 	"'%s uds.%d':1 -> '%s bru':%d"
@@ -159,6 +165,10 @@ struct vsp_scaler {
 	struct vsp_scaler_template	templates[VSP_INPUT_MAX];
 };
 
+struct vsp_output {
+	struct media_pad	*pads[ARRAY_SIZE(vsp_output_fmt)];
+};
+
 typedef enum {
 	VSP_STATE_IDLE,
 	VSP_STATE_START,
@@ -182,6 +192,8 @@ struct vsp_device {
 	int scaler_count;
 	int scaler_max;
 	struct vsp_scaler scalers[VSP_SCALER_MAX];
+
+	struct vsp_output output;
 };
 
 static void
@@ -386,6 +398,16 @@ vsp_init(struct media_device *media)
 		}
 	}
 
+	/* get pads for output */
+	for (i = 0; i < (int)ARRAY_SIZE(vsp_output_fmt); i++) {
+		snprintf(buf, sizeof(buf), vsp_output_fmt[i], device_name);
+		weston_log("get an output pad: '%s'\n", buf);
+		if (!(vsp->output.pads[i] = media_parse_pad(media, buf, NULL))) {
+			weston_log("parse pad failed.\n");
+			goto error;
+		}
+	}
+
 	/* get a file descriptor for the output */
 	snprintf(buf, sizeof(buf), vsp_output, device_name);
 	entity = media_get_entity_by_name(media, buf, strlen(buf));
@@ -517,15 +539,8 @@ vsp_set_format(int fd, struct v4l2_format *fmt)
 static int
 vsp_set_output(struct vsp_device *vsp, struct vsp_renderer_output *out)
 {
-	char buf[64];
 	int i;
-	struct media_pad *pad;
 	struct v4l2_mbus_framefmt format;
-	static char *pads[] = {
-		"'%s bru':4",
-		"'%s wpf.0':0",
-		"'%s wpf.0':1",
-	};
 
 	DBG("Setting output size to %dx%d\n", out->base.width, out->base.height);
 
@@ -534,12 +549,10 @@ vsp_set_output(struct vsp_device *vsp, struct vsp_renderer_output *out)
 	format.height = out->base.height;
 	format.code   = V4L2_MBUS_FMT_ARGB8888_1X32;	// TODO: does this have to be flexible?
 
-	for (i = 0; i < (int)ARRAY_SIZE(pads); i++) {
-		snprintf(buf, sizeof(buf), pads[i], vsp->base.device_name);
-		DBG("Setting output format: '%s'\n", buf);
-		pad = media_parse_pad(vsp->base.media, buf, NULL);
+	for (i = 0; i < (int)ARRAY_SIZE(vsp->output.pads); i++) {
+		struct media_pad *pad = vsp->output.pads[i];
 		if (v4l2_subdev_set_format(pad->entity, &format, pad->index, V4L2_SUBDEV_FORMAT_ACTIVE)) {
-			weston_log("set sbudev format for %s failed.\n", buf);
+			weston_log("set sbudev format for failed at index %d.\n", i);
 			return -1;
 		}
 	}
