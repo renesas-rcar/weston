@@ -349,6 +349,27 @@ vsp_init(struct media_device *media)
 
 		vsp->input_pads[i].fd = entity->fd;
 		vsp_check_capabiility(vsp->input_pads[i].fd, media_entity_get_devname(entity));
+
+		/* set an input format for BRU to be ARGB (default) */
+		{
+			struct v4l2_mbus_framefmt format = {
+				.width = 256,		// a random number
+				.height = 256,		// a random number
+				.code = V4L2_MBUS_FMT_ARGB8888_1X32
+			};
+
+			if (v4l2_subdev_set_format(vsp->input_pads[i].compose_pad->entity, &format,
+						   vsp->input_pads[i].compose_pad->index,
+					           V4L2_SUBDEV_FORMAT_ACTIVE)) {
+				weston_log("setting default failed.\n");
+				goto error;
+			}
+
+			if (format.code != V4L2_MBUS_FMT_ARGB8888_1X32) {
+				weston_log("couldn't set to ARGB.\n");
+				goto error;
+			}
+		}
 	}
 
 	/* Initialize scaler */
