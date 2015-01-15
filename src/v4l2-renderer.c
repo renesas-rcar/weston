@@ -60,9 +60,13 @@
 #if 0
 #define DBG(...) weston_log(__VA_ARGS__)
 #define DBGC(...) weston_log_continue(__VA_ARGS__)
+#define DEBUG
 #else
 #define DBG(...) do {} while (0)
 #define DBGC(...) do {} while (0)
+#ifdef DEBUG
+#  undef DEBUG
+#endif
 #endif
 
 struct v4l2_output_state {
@@ -448,9 +452,11 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	struct v4l2_surface_state *vs = get_surface_state(ev->surface);
 	/* repaint bounding region in global coordinates: */
 	pixman_region32_t repaint;
+#if 0
 	/* non-opaque region in surface coordinates: */
 	pixman_region32_t surface_blend;
 	pixman_box32_t *region;
+#endif
 
 	if (vs->planes[0].dmafd == 0)
 		return;
@@ -475,7 +481,7 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 		goto out;
 	}
 
-#if 1
+#ifdef DEBUG
 	{
 		pixman_box32_t *b;
 
@@ -490,8 +496,10 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 		b = pixman_region32_extents(&ev->clip);
 		DBG("%s: clip: (%d,%d)-(%d,%d)\n", __func__, b->x1, b->y1, b->x2, b->y2);
 	}
+#endif
 	repaint_region(ev, output, &repaint, NULL, PIXMAN_OP_OVER);
-#else
+
+#if 0
 	if (ev->alpha != 1.0 ||
 	    (ev->transform.enabled &&
 	     ev->transform.matrix.type != WESTON_MATRIX_TRANSFORM_TRANSLATE)) {
