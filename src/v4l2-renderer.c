@@ -577,7 +577,7 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 			pixman_region32_subtract(&visible_region,
 						 &repaint_region, &opaque_region);
 			if (pixman_region32_not_empty(&visible_region)) {
-				pixman_region32_t view_opaque;
+				pixman_region32_t view_opaque_region;
 
 				DBG("%s: visible view found [%d] - surface=(%d,%d)-(%d,%d)\n",
 				    __func__, n,
@@ -594,20 +594,20 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 				n++;
 
 				/* add its opaque region */
-				pixman_region32_init(&view_opaque);
-				pixman_region32_copy(&view_opaque, &view->surface->opaque);
+				pixman_region32_init(&view_opaque_region);
+				pixman_region32_copy(&view_opaque_region, &view->surface->opaque);
 
 				if (!view->transform.enabled) {
-					pixman_region32_translate(&view_opaque, view->geometry.x, view->geometry.y);
+					pixman_region32_translate(&view_opaque_region, view->geometry.x, view->geometry.y);
 				} else {
 					float view_x, view_y;
 
 					weston_view_to_global_float(view, 0, 0, &view_x, &view_y);
-					pixman_region32_translate(&view_opaque, (int)view_x, (int)view_y);
+					pixman_region32_translate(&view_opaque_region, (int)view_x, (int)view_y);
 				}
 
-				pixman_region32_union(&opaque_region, &opaque_region, &view_opaque);
-				pixman_region32_fini(&view_opaque);
+				pixman_region32_union(&opaque_region, &opaque_region, &view_opaque_region);
+				pixman_region32_fini(&view_opaque_region);
 			} else {
 				DBG("%s: skipping a view(2) surface=(%d,%d)-(%d,%d), opaque=(%d,%d)-(%d,%d)\n",
 				    __func__,
