@@ -555,7 +555,6 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 	wl_list_init(&visible_view_list);
 	wl_list_for_each(view, &compositor->view_list, link) {
 		if (view->plane == &compositor->primary_plane) {
-			float view_x, view_y;
 			pixman_region32_t repaint_region;
 			pixman_region32_t visible_region;
 
@@ -601,6 +600,8 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 				if (!view->transform.enabled) {
 					pixman_region32_translate(&view_opaque, view->geometry.x, view->geometry.y);
 				} else {
+					float view_x, view_y;
+
 					weston_view_to_global_float(view, 0, 0, &view_x, &view_y);
 					pixman_region32_translate(&view_opaque, (int)view_x, (int)view_y);
 				}
