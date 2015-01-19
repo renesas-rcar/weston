@@ -74,6 +74,7 @@ struct vsp_renderer_output {
 
 #define VSP_INPUT_MAX	4
 #define VSP_SCALER_MAX	1
+#define VSP_SCALER_MIN_PIXELS	4	// UDS can't take pixels smaller than this
 
 const char *vsp_input_links[] = {
 	"'%s rpf.0':1 -> '%s bru':0",
@@ -940,6 +941,7 @@ vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *s
 {
 	struct vsp_device *vsp = (struct vsp_device*)dev;
 	struct vsp_surface_state *vs = (struct vsp_surface_state*)surface_state;
+	int should_use_scaler = 0;
 
 	if (vs->base.src_rect.width > 8190 || vs->base.src_rect.height > 8190) {
 		weston_log("ignoring the size exceeding the limit (8190x8190) < (%dx%d)\n", vs->base.src_rect.width, vs->base.src_rect.height);
@@ -949,6 +951,15 @@ vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *s
 	if (vs->base.src_rect.width < 1 || vs->base.src_rect.height < 1) {
 		weston_log("ignoring the size of zeros < (%dx%d)\n", vs->base.src_rect.width, vs->base.src_rect.height);
 		return -1;
+	}
+
+	if (vs->base.dst_rect.width != vs->base.src_rect.width || vs->base.dst_rect.height != vs->base.src_rect.height) {
+		if (vs->base.src_rect.width < VSP_SCALER_MIN_PIXELS || vs->base.src_rect.height < VSP_SCALER_MIN_PIXELS) {
+			weston_log("ignoring the size the scaler can't handle (input size=%dx%d).\n",
+				vs->base.src_rect.width, vs->base.src_rect.height);
+			return -1;
+		}
+		should_use_scaler = 1;
 	}
 
 	if (vs->base.src_rect.left < 0) {
@@ -991,8 +1002,7 @@ vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *s
 	}
 
 	/* check if we need to use a scaler */
-	if (vs->base.dst_rect.width != vs->base.src_rect.width ||
-	    vs->base.dst_rect.height != vs->base.src_rect.height) {
+	if (should_use_scaler) {
 		DBG("We need scaler! scaler! scaler! (%dx%d)->(%dx%d)\n",
 		    vs->base.src_rect.width, vs->base.src_rect.height,
 		    vs->base.dst_rect.width, vs->base.dst_rect.height);
