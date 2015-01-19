@@ -386,35 +386,35 @@ repaint_region(struct weston_view *ev, struct weston_output *output,
 	q2.vector[2] = pixman_int_to_fixed(1);
 
 	DBG("bbox: (%d,%d)-(%d,%d)\n", bbox->x1, bbox->y1, bbox->x2, bbox->y2);
-	DBG("q1: (%d,%d,%d)\n", pixman_fixed_to_int(q1.vector[0]), pixman_fixed_to_int(q1.vector[1]), pixman_fixed_to_int(q1.vector[2]));
-	DBG("q2: (%d,%d,%d)\n", pixman_fixed_to_int(q2.vector[0]), pixman_fixed_to_int(q2.vector[1]), pixman_fixed_to_int(q2.vector[2]));
+	DBG("q1: (%f,%f,%f)\n", pixman_fixed_to_double(q1.vector[0]), pixman_fixed_to_double(q1.vector[1]), pixman_fixed_to_double(q1.vector[2]));
+	DBG("q2: (%f,%f,%f)\n", pixman_fixed_to_double(q2.vector[0]), pixman_fixed_to_double(q2.vector[1]), pixman_fixed_to_double(q2.vector[2]));
 
-	DBG("transform: (%d,%d,%d)(%d,%d,%d)(%d,%d,%d)\n",
-	    pixman_fixed_to_int(transform.matrix[0][0]), pixman_fixed_to_int(transform.matrix[1][0]), pixman_fixed_to_int(transform.matrix[2][0]),
-	    pixman_fixed_to_int(transform.matrix[0][1]), pixman_fixed_to_int(transform.matrix[1][1]), pixman_fixed_to_int(transform.matrix[2][1]),
-	    pixman_fixed_to_int(transform.matrix[0][2]), pixman_fixed_to_int(transform.matrix[1][2]), pixman_fixed_to_int(transform.matrix[2][2])
+	DBG("transform: (%f,%f,%f)(%f,%f,%f)(%f,%f,%f)\n",
+	    pixman_fixed_to_double(transform.matrix[0][0]), pixman_fixed_to_double(transform.matrix[1][0]), pixman_fixed_to_double(transform.matrix[2][0]),
+	    pixman_fixed_to_double(transform.matrix[0][1]), pixman_fixed_to_double(transform.matrix[1][1]), pixman_fixed_to_double(transform.matrix[2][1]),
+	    pixman_fixed_to_double(transform.matrix[0][2]), pixman_fixed_to_double(transform.matrix[1][2]), pixman_fixed_to_double(transform.matrix[2][2])
 	);
 
 	pixman_transform_point(&transform, &q1);
 	pixman_transform_point(&transform, &q2);
 
-	DBG("q1': (%d,%d,%d)\n", pixman_fixed_to_int(q1.vector[0]), pixman_fixed_to_int(q1.vector[1]), pixman_fixed_to_int(q1.vector[2]));
-	DBG("q2': (%d,%d,%d)\n", pixman_fixed_to_int(q2.vector[0]), pixman_fixed_to_int(q2.vector[1]), pixman_fixed_to_int(q2.vector[2]));
+	DBG("q1': (%f,%f,%f)\n", pixman_fixed_to_double(q1.vector[0]), pixman_fixed_to_double(q1.vector[1]), pixman_fixed_to_double(q1.vector[2]));
+	DBG("q2': (%f,%f,%f)\n", pixman_fixed_to_double(q2.vector[0]), pixman_fixed_to_double(q2.vector[1]), pixman_fixed_to_double(q2.vector[2]));
 
 	if (q1.vector[0] < q2.vector[0]) {
 		src_x = pixman_fixed_to_int(q1.vector[0]);
-		src_width = pixman_fixed_to_int(q2.vector[0] - q1.vector[0]);
+		src_width = pixman_fixed_to_int(pixman_fixed_ceil(q2.vector[0] - q1.vector[0]));
 	} else {
 		src_x = pixman_fixed_to_int(q2.vector[0]);
-		src_width = pixman_fixed_to_int(q1.vector[0] - q2.vector[0]);
+		src_width = pixman_fixed_to_int(pixman_fixed_ceil(q1.vector[0] - q2.vector[0]));
 	}
 
 	if (q1.vector[1] < q2.vector[1]) {
 		src_y = pixman_fixed_to_int(q1.vector[1]);
-		src_height = pixman_fixed_to_int(q2.vector[1] - q1.vector[1]);
+		src_height = pixman_fixed_to_int(pixman_fixed_ceil(q2.vector[1] - q1.vector[1]));
 	} else {
 		src_y = pixman_fixed_to_int(q2.vector[1]);
-		src_height = pixman_fixed_to_int(q1.vector[1] - q2.vector[1]);
+		src_height = pixman_fixed_to_int(pixman_fixed_ceil(q1.vector[1] - q2.vector[1]));
 	}
 
 	dst_x = bbox->x1;
