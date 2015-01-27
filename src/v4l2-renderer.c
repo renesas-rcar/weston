@@ -168,6 +168,9 @@ region_global_to_output(struct weston_output *output, pixman_region32_t *region)
 }
 
 #define D2F(v) pixman_double_to_fixed((double)v)
+#define F2D(v) pixman_fixed_to_double(v)
+#define F2I(v) pixman_fixed_to_int(v)
+
 
 static void
 transform_apply_viewport(pixman_transform_t *transform,
@@ -199,66 +202,62 @@ transform_apply_viewport(pixman_transform_t *transform,
 }
 
 static void
-repaint_region(struct weston_view *ev, struct weston_output *output,
-	       pixman_region32_t *region, pixman_region32_t *surf_region,
-	       pixman_op_t pixman_op)	// XXX: this needs to be replaced.
+transform_region(pixman_transform_t *transform, pixman_region32_t *src_region,
+		 pixman_region32_t *dst_region)
 {
-	struct v4l2_renderer *renderer = (struct v4l2_renderer*)output->compositor->renderer;
-	struct v4l2_surface_state *vs = get_surface_state(ev->surface);
-	struct weston_buffer_viewport *vp = &ev->surface->buffer_viewport;
-	pixman_region32_t final_region;
-	float view_x, view_y;
-	pixman_transform_t transform;
-	pixman_fixed_t fw, fh;
 	pixman_box32_t *bbox;
 	pixman_vector_t q1, q2;
-	int src_x, src_y, src_width, src_height;
-	int dst_x, dst_y, dst_width, dst_height;
 
-	/* The final region to be painted is the intersection of
-	 * 'region' and 'surf_region'. However, 'region' is in the global
-	 * coordinates, and 'surf_region' is in the surface-local
-	 * coordinates
-	 */
-	pixman_region32_init(&final_region);
-	if (surf_region) {
-		pixman_region32_copy(&final_region, surf_region);
+	pixman_region32_init(dst_region);
+	if (!pixman_region32_not_empty(src_region))
+		return;
 
-		/* Convert from surface to global coordinates */
-		if (!ev->transform.enabled) {
-			pixman_region32_translate(&final_region, ev->geometry.x, ev->geometry.y);
-		} else {
-			weston_view_to_global_float(ev, 0, 0, &view_x, &view_y);
-			pixman_region32_translate(&final_region, (int)view_x, (int)view_y);
-		}
+	bbox = pixman_region32_extents(src_region);
+	q1.vector[0] = pixman_int_to_fixed(bbox->x1);
+	q1.vector[1] = pixman_int_to_fixed(bbox->y1);
+	q1.vector[2] = pixman_int_to_fixed(1);
 
-		/* We need to paint the intersection */
-		pixman_region32_intersect(&final_region, &final_region, region);
-	} else {
-		/* If there is no surface region, just use the global region */
-		pixman_region32_copy(&final_region, region);
-	}
+	q2.vector[0] = pixman_int_to_fixed(bbox->x2);
+	q2.vector[1] = pixman_int_to_fixed(bbox->y2);
+	q2.vector[2] = pixman_int_to_fixed(1);
 
-	/* Convert from global to output coord */
-	bbox = pixman_region32_extents(&final_region);
-	DBG("%s: final_region: global:(%d,%d)-(%d,%d)\n", __func__, bbox->x1, bbox->y1, bbox->x2, bbox->y2);
+	DBG("bbox: (%d,%d)-(%d,%d)\n", bbox->x1, bbox->y1, bbox->x2, bbox->y2);
+	DBG("q1: (%f,%f,%f)\n", F2D(q1.vector[0]), F2D(q1.vector[1]), F2D(q1.vector[2]));
+	DBG("q2: (%f,%f,%f)\n", F2D(q2.vector[0]), F2D(q2.vector[1]), F2D(q2.vector[2]));
 
-	region_global_to_output(output, &final_region);
+	DBG("transform: (%f,%f,%f)(%f,%f,%f)(%f,%f,%f)\n",
+	    F2D(transform->matrix[0][0]), F2D(transform->matrix[1][0]), F2D(transform->matrix[2][0]),
+	    F2D(transform->matrix[0][1]), F2D(transform->matrix[1][1]), F2D(transform->matrix[2][1]),
+	    F2D(transform->matrix[0][2]), F2D(transform->matrix[1][2]), F2D(transform->matrix[2][2])
+	);
 
-	bbox = pixman_region32_extents(&final_region);
-	DBG("%s: final_region: local:(%d,%d)-(%d,%d)\n", __func__, bbox->x1, bbox->y1, bbox->x2, bbox->y2);
+	pixman_transform_point(transform, &q1);
+	pixman_transform_point(transform, &q2);
 
-	/*
-	 * At this point, we should have the destination in final_region.
-	 */
+	DBG("q1': (%f,%f,%f)\n", F2D(q1.vector[0]), F2D(q1.vector[1]), F2D(q1.vector[2]));
+	DBG("q2': (%f,%f,%f)\n", F2D(q2.vector[0]), F2D(q2.vector[1]), F2D(q2.vector[2]));
+
+	pixman_region32_init_rect(dst_region,
+				  F2I((q1.vector[0] < q2.vector[0]) ? q1.vector[0] : q2.vector[0]),
+				  F2I((q1.vector[1] < q2.vector[1]) ? q1.vector[1] : q2.vector[1]),
+				  abs(F2I(pixman_fixed_ceil(q2.vector[0] - q1.vector[0]))),
+				  abs(F2I(pixman_fixed_ceil(q2.vector[1] - q1.vector[1]))));
+}
+
+static void
+calculate_transform_matrix(struct weston_view *ev, struct weston_output *output,
+			   pixman_transform_t *transform)
+{
+	struct weston_buffer_viewport *vp = &ev->surface->buffer_viewport;
+	pixman_fixed_t fw, fh;
 
 	/* Set up the source transformation based on the surface
 	   position, the output position/transform/scale and the client
 	   specified buffer transform/scale */
-	pixman_transform_init_identity(&transform);
-	pixman_transform_scale(&transform, NULL,
-			       pixman_double_to_fixed ((double)1.0/output->current_scale),
-			       pixman_double_to_fixed ((double)1.0/output->current_scale));
+	pixman_transform_init_identity(transform);
+	pixman_transform_scale(transform, NULL,
+			       pixman_double_to_fixed((double)1.0 / output->current_scale),
+			       pixman_double_to_fixed((double)1.0 / output->current_scale));
 
 	fw = pixman_int_to_fixed(output->width);
 	fh = pixman_int_to_fixed(output->height);
@@ -269,18 +268,18 @@ repaint_region(struct weston_view *ev, struct weston_output *output,
 		break;
 	case WL_OUTPUT_TRANSFORM_90:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_90:
-		pixman_transform_rotate(&transform, NULL, 0, -pixman_fixed_1);
-		pixman_transform_translate(&transform, NULL, 0, fh);
+		pixman_transform_rotate(transform, NULL, 0, -pixman_fixed_1);
+		pixman_transform_translate(transform, NULL, 0, fh);
 		break;
 	case WL_OUTPUT_TRANSFORM_180:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_180:
-		pixman_transform_rotate(&transform, NULL, -pixman_fixed_1, 0);
-		pixman_transform_translate(&transform, NULL, fw, fh);
+		pixman_transform_rotate(transform, NULL, -pixman_fixed_1, 0);
+		pixman_transform_translate(transform, NULL, fw, fh);
 		break;
 	case WL_OUTPUT_TRANSFORM_270:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_270:
-		pixman_transform_rotate(&transform, NULL, 0, pixman_fixed_1);
-		pixman_transform_translate(&transform, NULL, fw, 0);
+		pixman_transform_rotate(transform, NULL, 0, pixman_fixed_1);
+		pixman_transform_translate(transform, NULL, fw, 0);
 		break;
 	}
 
@@ -289,16 +288,16 @@ repaint_region(struct weston_view *ev, struct weston_output *output,
 	case WL_OUTPUT_TRANSFORM_FLIPPED_90:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_180:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_270:
-		pixman_transform_scale(&transform, NULL,
-				       pixman_int_to_fixed (-1),
-				       pixman_int_to_fixed (1));
-		pixman_transform_translate(&transform, NULL, fw, 0);
+		pixman_transform_scale(transform, NULL,
+				       pixman_int_to_fixed(-1),
+				       pixman_int_to_fixed(1));
+		pixman_transform_translate(transform, NULL, fw, 0);
 		break;
 	}
 
-        pixman_transform_translate(&transform, NULL,
-				   pixman_double_to_fixed (output->x),
-				   pixman_double_to_fixed (output->y));
+        pixman_transform_translate(transform, NULL,
+				   pixman_double_to_fixed(output->x),
+				   pixman_double_to_fixed(output->y));
 
 	if (ev->transform.enabled) {
 		/* Pixman supports only 2D transform matrix, but Weston uses 3D,
@@ -320,14 +319,14 @@ repaint_region(struct weston_view *ev, struct weston_output *output,
 			}};
 
 		pixman_transform_invert(&surface_transform, &surface_transform);
-		pixman_transform_multiply (&transform, &surface_transform, &transform);
+		pixman_transform_multiply(transform, &surface_transform, transform);
 	} else {
-		pixman_transform_translate(&transform, NULL,
-					   pixman_double_to_fixed ((double)-ev->geometry.x),
-					   pixman_double_to_fixed ((double)-ev->geometry.y));
+		pixman_transform_translate(transform, NULL,
+					   pixman_double_to_fixed((double)-ev->geometry.x),
+					   pixman_double_to_fixed((double)-ev->geometry.y));
 	}
 
-	transform_apply_viewport(&transform, ev->surface);
+	transform_apply_viewport(transform, ev->surface);
 
 	fw = pixman_int_to_fixed(ev->surface->width_from_buffer);
 	fh = pixman_int_to_fixed(ev->surface->height_from_buffer);
@@ -337,10 +336,10 @@ repaint_region(struct weston_view *ev, struct weston_output *output,
 	case WL_OUTPUT_TRANSFORM_FLIPPED_90:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_180:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_270:
-		pixman_transform_scale(&transform, NULL,
-				       pixman_int_to_fixed (-1),
-				       pixman_int_to_fixed (1));
-		pixman_transform_translate(&transform, NULL, fw, 0);
+		pixman_transform_scale(transform, NULL,
+				       pixman_int_to_fixed(-1),
+				       pixman_int_to_fixed(1));
+		pixman_transform_translate(transform, NULL, fw, 0);
 		break;
 	}
 
@@ -351,113 +350,50 @@ repaint_region(struct weston_view *ev, struct weston_output *output,
 		break;
 	case WL_OUTPUT_TRANSFORM_90:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_90:
-		pixman_transform_rotate(&transform, NULL, 0, pixman_fixed_1);
-		pixman_transform_translate(&transform, NULL, fh, 0);
+		pixman_transform_rotate(transform, NULL, 0, pixman_fixed_1);
+		pixman_transform_translate(transform, NULL, fh, 0);
 		break;
 	case WL_OUTPUT_TRANSFORM_180:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_180:
-		pixman_transform_rotate(&transform, NULL, -pixman_fixed_1, 0);
-		pixman_transform_translate(&transform, NULL, fw, fh);
+		pixman_transform_rotate(transform, NULL, -pixman_fixed_1, 0);
+		pixman_transform_translate(transform, NULL, fw, fh);
 		break;
 	case WL_OUTPUT_TRANSFORM_270:
 	case WL_OUTPUT_TRANSFORM_FLIPPED_270:
-		pixman_transform_rotate(&transform, NULL, 0, -pixman_fixed_1);
-		pixman_transform_translate(&transform, NULL, 0, fw);
+		pixman_transform_rotate(transform, NULL, 0, -pixman_fixed_1);
+		pixman_transform_translate(transform, NULL, 0, fw);
 		break;
 	}
 
-	pixman_transform_scale(&transform, NULL,
+	pixman_transform_scale(transform, NULL,
 			       pixman_double_to_fixed(vp->buffer.scale),
 			       pixman_double_to_fixed(vp->buffer.scale));
 
-	/*
-	 * at this point, we should have a transformation for the source.
-	 * However what we really need is not a transformation. We need
-	 * is a source region.
-	 */
+}
 
-	bbox = pixman_region32_extents(&final_region);
-	q1.vector[0] = pixman_int_to_fixed(bbox->x1);
-	q1.vector[1] = pixman_int_to_fixed(bbox->y1);
-	q1.vector[2] = pixman_int_to_fixed(1);
+static void
+set_v4l2_rect(pixman_region32_t *region, struct v4l2_rect *rect)
+{
+	pixman_box32_t *bbox;
 
-	q2.vector[0] = pixman_int_to_fixed(bbox->x2);
-	q2.vector[1] = pixman_int_to_fixed(bbox->y2);
-	q2.vector[2] = pixman_int_to_fixed(1);
-
-	DBG("bbox: (%d,%d)-(%d,%d)\n", bbox->x1, bbox->y1, bbox->x2, bbox->y2);
-	DBG("q1: (%f,%f,%f)\n", pixman_fixed_to_double(q1.vector[0]), pixman_fixed_to_double(q1.vector[1]), pixman_fixed_to_double(q1.vector[2]));
-	DBG("q2: (%f,%f,%f)\n", pixman_fixed_to_double(q2.vector[0]), pixman_fixed_to_double(q2.vector[1]), pixman_fixed_to_double(q2.vector[2]));
-
-	DBG("transform: (%f,%f,%f)(%f,%f,%f)(%f,%f,%f)\n",
-	    pixman_fixed_to_double(transform.matrix[0][0]), pixman_fixed_to_double(transform.matrix[1][0]), pixman_fixed_to_double(transform.matrix[2][0]),
-	    pixman_fixed_to_double(transform.matrix[0][1]), pixman_fixed_to_double(transform.matrix[1][1]), pixman_fixed_to_double(transform.matrix[2][1]),
-	    pixman_fixed_to_double(transform.matrix[0][2]), pixman_fixed_to_double(transform.matrix[1][2]), pixman_fixed_to_double(transform.matrix[2][2])
-	);
-
-	pixman_transform_point(&transform, &q1);
-	pixman_transform_point(&transform, &q2);
-
-	DBG("q1': (%f,%f,%f)\n", pixman_fixed_to_double(q1.vector[0]), pixman_fixed_to_double(q1.vector[1]), pixman_fixed_to_double(q1.vector[2]));
-	DBG("q2': (%f,%f,%f)\n", pixman_fixed_to_double(q2.vector[0]), pixman_fixed_to_double(q2.vector[1]), pixman_fixed_to_double(q2.vector[2]));
-
-	if (q1.vector[0] < q2.vector[0]) {
-		src_x = pixman_fixed_to_int(q1.vector[0]);
-		src_width = pixman_fixed_to_int(pixman_fixed_ceil(q2.vector[0] - q1.vector[0]));
-	} else {
-		src_x = pixman_fixed_to_int(q2.vector[0]);
-		src_width = pixman_fixed_to_int(pixman_fixed_ceil(q1.vector[0] - q2.vector[0]));
-	}
-
-	if (q1.vector[1] < q2.vector[1]) {
-		src_y = pixman_fixed_to_int(q1.vector[1]);
-		src_height = pixman_fixed_to_int(pixman_fixed_ceil(q2.vector[1] - q1.vector[1]));
-	} else {
-		src_y = pixman_fixed_to_int(q2.vector[1]);
-		src_height = pixman_fixed_to_int(pixman_fixed_ceil(q1.vector[1] - q2.vector[1]));
-	}
-
-	dst_x = bbox->x1;
-	dst_y = bbox->y1;
-	dst_width = bbox->x2 - bbox->x1;
-	dst_height = bbox->y2 - bbox->y1;
-
-	/* compose v4l2_surface_state */
-	vs->src_rect.width = src_width;
-	vs->src_rect.height = src_height;
-	vs->src_rect.top = src_y;
-	vs->src_rect.left = src_x;
-
-	vs->dst_rect.width = dst_width;
-	vs->dst_rect.height = dst_height;
-	vs->dst_rect.top = dst_y;
-	vs->dst_rect.left = dst_x;
-
-	vs->alpha = ev->alpha;
-
-	DBG("monitor: %dx%d@(%d,%d)\n", output->width, output->height, output->x, output->y);
-	DBG("composing from %dx%d@(%d,%d) to %dx%d@(%d,%d)\n",
-	    src_width, src_height, src_x, src_y,
-	    dst_width, dst_height, dst_x, dst_y);
-
-	device_interface->draw_view(renderer->device, vs);
-
-	pixman_region32_fini(&final_region);
+	bbox = pixman_region32_extents(region);
+	rect->left   = bbox->x1;
+	rect->top    = bbox->y1;
+	rect->width  = bbox->x2 - bbox->x1;
+	rect->height = bbox->y2 - bbox->y1;
 }
 
 static void
 draw_view(struct weston_view *ev, struct weston_output *output,
-	  pixman_region32_t *region,
-	  pixman_region32_t *damage) /* in global coordinates */
+	  pixman_transform_t *transform,
+	  pixman_region32_t *region, pixman_region32_t *opaque_region,
+	  pixman_region32_t *translated_opaque_region)
 {
+	struct v4l2_renderer *renderer = (struct v4l2_renderer*)output->compositor->renderer;
 	struct v4l2_surface_state *vs = get_surface_state(ev->surface);
-	/* repaint bounding region in global coordinates: */
-#if 0
-	/* non-opaque region in surface coordinates: */
-	pixman_region32_t surface_blend;
-	pixman_box32_t *region;
-#endif
+	pixman_region32_t dst_region, src_region;
 
+	/* you may sometime get not-yet-attached views */
 	if (vs->planes[0].dmafd == 0)
 		return;
 
@@ -474,57 +410,42 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 		return;
 	}
 
-#ifdef DEBUG
-	{
-		pixman_box32_t *b;
+	/* find out the final destination in the output coordinate */
+	pixman_region32_init(&dst_region);
+	pixman_region32_copy(&dst_region, region);
+	region_global_to_output(output, &dst_region);
 
-		DBG("%s: for dmafd=%d\n", __func__, vs->planes[0].dmafd);
+	transform_region(transform, &dst_region, &src_region);
+	set_v4l2_rect(&dst_region, &vs->dst_rect);
+	set_v4l2_rect(&src_region, &vs->src_rect);
 
-		b = pixman_region32_extents(region);
-		DBG("%s: repaint: (%d,%d)-(%d,%d)\n", __func__, b->x1, b->y1, b->x2, b->y2);
+	/* setup opaque region */
+	set_v4l2_rect(translated_opaque_region, &vs->opaque_dst_rect);
+	set_v4l2_rect(opaque_region, &vs->opaque_src_rect);
 
-		b = pixman_region32_extents(damage);
-		DBG("%s: damage: (%d,%d)-(%d,%d)\n", __func__, b->x1, b->y1, b->x2, b->y2);
+	vs->alpha = ev->alpha;
 
-		b = pixman_region32_extents(&ev->clip);
-		DBG("%s: clip: (%d,%d)-(%d,%d)\n", __func__, b->x1, b->y1, b->x2, b->y2);
-	}
-#endif
-	repaint_region(ev, output, region, NULL, PIXMAN_OP_OVER);
+	DBG("monitor: %dx%d@(%d,%d)\n", output->width, output->height, output->x, output->y);
+	DBG("composing from %dx%d@(%d,%d) to %dx%d@(%d,%d)\n",
+	    vs->src_rect.width, vs->src_rect.height, vs->src_rect.left, vs->src_rect.top,
+	    vs->dst_rect.width, vs->dst_rect.height, vs->dst_rect.left, vs->dst_rect.top);
+	DBG("composing from %dx%d@(%d,%d) to %dx%d@(%d,%d) [opaque region]\n",
+	    vs->opaque_src_rect.width, vs->opaque_src_rect.height, vs->opaque_src_rect.left, vs->opaque_src_rect.top,
+	    vs->opaque_dst_rect.width, vs->opaque_dst_rect.height, vs->opaque_dst_rect.left, vs->opaque_dst_rect.top);
 
-#if 0
-	if (ev->alpha != 1.0 ||
-	    (ev->transform.enabled &&
-	     ev->transform.matrix.type != WESTON_MATRIX_TRANSFORM_TRANSLATE)) {
-		repaint_region(ev, output, region, NULL, PIXMAN_OP_OVER);
-	} else {
-		/* blended region is whole surface minus opaque region: */
-		pixman_region32_init_rect(&surface_blend, 0, 0,
-					  ev->surface->width, ev->surface->height);
-		pixman_region32_subtract(&surface_blend, &surface_blend, &ev->surface->opaque);
+	device_interface->draw_view(renderer->device, vs);
 
-		/*
-		 * We assume renderer devices can compose only a single rectangular region.
-		 * Therefore, we shall compose a none-opaque region first, including an opaque
-		 * region, and then compose the opaque region on top of it.
-		 */
-		if (pixman_region32_not_empty(&surface_blend)) {
-			repaint_region(ev, output, region, &surface_blend, PIXMAN_OP_OVER);
-		}
-
-		/* now the opaque region */
-		if (pixman_region32_not_empty(&ev->surface->opaque)) {
-			repaint_region(ev, output, region, &ev->surface->opaque, PIXMAN_OP_SRC);
-		}
-		pixman_region32_fini(&surface_blend);
-	}
-#endif
+	pixman_region32_fini(&dst_region);
+	pixman_region32_fini(&src_region);
 }
 
 struct visible_view {
 	struct weston_view *view;
 	struct wl_list link;
 	pixman_region32_t repaint_region;
+	pixman_region32_t opaque_region;
+	pixman_region32_t clipped_opaque_region;
+	pixman_transform_t transform;
 };
 
 static void
@@ -539,7 +460,8 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 	static struct visible_view *visible_views = NULL, *vview;
 	static int max_visible_views = 0;
 	int n, length;
-	pixman_region32_t opaque_region;
+	pixman_region32_t final_opaque_region;
+	pixman_region32_t local_output_region;
 
 	device_interface->begin_compose(renderer->device, vo->output);
 
@@ -551,20 +473,22 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 	DBG(">> %d views found\n", length);
 
 	n = 0;
-	pixman_region32_init(&opaque_region);
+	pixman_region32_init_rect(&local_output_region, 0, 0, output->width, output->height);
+	pixman_region32_init(&final_opaque_region);
 	wl_list_init(&visible_view_list);
 	wl_list_for_each(view, &compositor->view_list, link) {
 		if (view->plane == &compositor->primary_plane) {
-			pixman_region32_t repaint_region;
+			pixman_region32_t region;
 			pixman_region32_t visible_region;
 
 			/* a surface in the repaint area? */
-			pixman_region32_init(&repaint_region);
-			pixman_region32_intersect(&repaint_region,
+			pixman_region32_init(&region);
+			pixman_region32_intersect(&region,
 						  &view->transform.boundingbox,
 						  &output->region);
-			if (!pixman_region32_not_empty(&repaint_region)) {
-				DBG("%s: skipping a view(1) view=(%d,%d)-(%d,%d), repaint=(%d,%d)-(%d,%d)\n",
+			pixman_region32_subtract(&region, &region, &view->clip);
+			if (!pixman_region32_not_empty(&region)) {
+				DBG("%s: skipping a view: not on this output: view=(%d,%d)-(%d,%d), repaint=(%d,%d)-(%d,%d)\n",
 				    __func__,
 				    view->transform.boundingbox.extents.x1, view->transform.boundingbox.extents.y1,
 				    view->transform.boundingbox.extents.x2, view->transform.boundingbox.extents.y2,
@@ -575,57 +499,70 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 
 			pixman_region32_init(&visible_region);
 			pixman_region32_subtract(&visible_region,
-						 &repaint_region, &opaque_region);
+						 &region, &final_opaque_region);
 			if (pixman_region32_not_empty(&visible_region)) {
-				pixman_region32_t view_opaque_region;
+				pixman_transform_t *transform = &visible_views[n].transform;
+				pixman_region32_t *repaint_region = &visible_views[n].repaint_region;
+				pixman_region32_t *opaque_region = &visible_views[n].opaque_region;
+				pixman_region32_t *clipped_opaque_region = &visible_views[n].clipped_opaque_region;
 
 				DBG("%s: visible view found [%d] - surface=(%d,%d)-(%d,%d)\n",
 				    __func__, n,
-				    repaint_region.extents.x1, repaint_region.extents.y1,
-				    repaint_region.extents.x2, repaint_region.extents.y2);
+				    region.extents.x1, region.extents.y1,
+				    region.extents.x2, region.extents.y2);
+
+				/* we have to compute a transform matrix */
+				calculate_transform_matrix(view, output, transform);
 
 				visible_views[n].view = view;
 
-				pixman_region32_init(&visible_views[n].repaint_region);
-				pixman_region32_copy(&visible_views[n].repaint_region, &repaint_region);
+				pixman_region32_init(repaint_region);
+				pixman_region32_copy(repaint_region, &region);
+
+				pixman_region32_init(opaque_region);
+				pixman_region32_init(clipped_opaque_region);
 
 				wl_list_insert(&visible_view_list, &visible_views[n].link);
 
-				n++;
+				/* add its opaque region if it's not empty */
+				DBG("%s: checking opaque region: (%d,%d)-(%d,%d).\n", __func__,
+				    view->surface->opaque.extents.x1, view->surface->opaque.extents.y1,
+				    view->surface->opaque.extents.x2, view->surface->opaque.extents.y2);
+				if (pixman_region32_not_empty(&view->surface->opaque)) {
+					pixman_transform_t inverse;
 
-				/* add its opaque region */
-				pixman_region32_init(&view_opaque_region);
-				pixman_region32_copy(&view_opaque_region, &view->surface->opaque);
+					DBG("%s: opaque region is not empty.\n", __func__);
 
-				if (!view->transform.enabled) {
-					pixman_region32_translate(&view_opaque_region, view->geometry.x, view->geometry.y);
-				} else {
-					float view_x, view_y;
+					pixman_transform_invert(&inverse, transform);
+					transform_region(&inverse, &view->surface->opaque, opaque_region);
 
-					weston_view_to_global_float(view, 0, 0, &view_x, &view_y);
-					pixman_region32_translate(&view_opaque_region, (int)view_x, (int)view_y);
+					pixman_region32_intersect(opaque_region, opaque_region, &local_output_region);
+					pixman_region32_union(&final_opaque_region, &final_opaque_region, opaque_region);
+
+					transform_region(transform, opaque_region, clipped_opaque_region);
 				}
 
-				pixman_region32_union(&opaque_region, &opaque_region, &view_opaque_region);
-				pixman_region32_fini(&view_opaque_region);
+				n++;
 			} else {
-				DBG("%s: skipping a view(2) surface=(%d,%d)-(%d,%d), opaque=(%d,%d)-(%d,%d)\n",
+				DBG("%s: skipping a view: under opaque region: surface=(%d,%d)-(%d,%d), opaque=(%d,%d)-(%d,%d)\n",
 				    __func__,
-				    repaint_region.extents.x1, repaint_region.extents.y1,
-				    repaint_region.extents.x2, repaint_region.extents.y2,
-				    opaque_region.extents.x1, opaque_region.extents.y1,
-				    opaque_region.extents.x2, opaque_region.extents.y2);
+				    region.extents.x1, region.extents.y1,
+				    region.extents.x2, region.extents.y2,
+				    final_opaque_region.extents.x1, final_opaque_region.extents.y1,
+				    final_opaque_region.extents.x2, final_opaque_region.extents.y2);
 			}
-			pixman_region32_fini(&repaint_region);
+			pixman_region32_fini(&region);
 			pixman_region32_fini(&visible_region);
 		}
 	}
-	pixman_region32_fini(&opaque_region);
+	pixman_region32_fini(&final_opaque_region);
 
 	DBG("%s: %d views to renderer\n", __func__, wl_list_length(&visible_view_list));
 	wl_list_for_each(vview, &visible_view_list, link) {
-		draw_view(vview->view, output, &vview->repaint_region, &output->region);
+		draw_view(vview->view, output, &vview->transform, &vview->repaint_region, &vview->clipped_opaque_region, &vview->opaque_region);
 		pixman_region32_fini(&vview->repaint_region);
+		pixman_region32_fini(&vview->opaque_region);
+		pixman_region32_fini(&vview->clipped_opaque_region);
 	}
 
 	device_interface->finish_compose(renderer->device);
