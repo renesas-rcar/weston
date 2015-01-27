@@ -180,6 +180,9 @@ struct vsp_input {
 	struct vsp_media_pad input_pads;
 	struct vsp_surface_state *input_surface_states;
 	struct vsp_scaler *use_scaler;
+	struct v4l2_rect *src;
+	struct v4l2_rect *dst;
+	int opaque;
 };
 
 struct vsp_device {
@@ -514,10 +517,11 @@ vsp_attach_buffer(struct v4l2_surface_state *surface_state)
 }
 
 static int
-vsp_set_format(int fd, struct v4l2_format *fmt)
+vsp_set_format(int fd, struct v4l2_format *fmt, int opaque)
 {
 	struct v4l2_format current_fmt;
 	int ret;
+	unsigned int original_pixelformat = fmt->fmt.pix_mp.pixelformat;
 
 	memset(&current_fmt, 0, sizeof(struct v4l2_format));
 	current_fmt.type = fmt->type;
@@ -538,6 +542,13 @@ vsp_set_format(int fd, struct v4l2_format *fmt)
 	    current_fmt.fmt.pix_mp.field,
 	    current_fmt.fmt.pix_mp.plane_fmt[0].sizeimage);
 
+	if (opaque) {
+		switch (original_pixelformat) {
+		case V4L2_PIX_FMT_ABGR32:
+			fmt->fmt.pix_mp.pixelformat = V4L2_PIX_FMT_XBGR32;
+		}
+	}
+
 	ret = ioctl(fd, VIDIOC_S_FMT, fmt);
 
 	DBG("New video format: %d, %08x(%c%c%c%c) %ux%u (stride %u) field %08u buffer size %u\n",
@@ -550,6 +561,8 @@ vsp_set_format(int fd, struct v4l2_format *fmt)
 	    fmt->fmt.pix_mp.width, fmt->fmt.pix_mp.height, fmt->fmt.pix_mp.plane_fmt[0].bytesperline,
 	    fmt->fmt.pix_mp.field,
 	    fmt->fmt.pix_mp.plane_fmt[0].sizeimage);
+
+	fmt->fmt.pix_mp.pixelformat = original_pixelformat;
 
 	if (ret == -1) {
 		weston_log("VIDIOC_S_FMT failed to %d (%s).\n", fd, strerror(errno));
@@ -699,7 +712,7 @@ vsp_comp_begin(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *ou
 	vsp_request_buffer(vsp->output_pad.fd, 1, 0);
 
 	fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-	vsp_set_format(vsp->output_pad.fd, fmt);
+	vsp_set_format(vsp->output_pad.fd, fmt, 0);
 	fmt->type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
 	vsp->output_surface_state = &output->surface_state;
@@ -726,10 +739,14 @@ vsp_set_alpha(struct media_entity *entity, float alpha)
 }
 
 static int
-vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct vsp_scaler *scaler,
-		      struct vsp_surface_state *vs, int enable)
+vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, int enable)
 {
 	struct v4l2_mbus_framefmt format;
+	struct vsp_media_pad *mpad = &input->input_pads;
+	struct vsp_scaler *scaler = input->use_scaler;
+	struct vsp_surface_state *vs = input->input_surface_states;
+	struct v4l2_rect *src = input->src;
+	struct v4l2_rect *dst = input->dst;
 
 	// enable link associated with this pad
 	if (!scaler) {
@@ -774,15 +791,14 @@ vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct
 	}
 
 	// set a crop paramters
-	if (v4l2_subdev_set_selection(mpad->infmt_pad->entity, &vs->base.src_rect, mpad->infmt_pad->index,
+	if (v4l2_subdev_set_selection(mpad->infmt_pad->entity, src, mpad->infmt_pad->index,
 				      V4L2_SEL_TGT_CROP, V4L2_SUBDEV_FORMAT_ACTIVE)) {
 		weston_log("set crop parameter failed: %dx%d@(%d,%d).\n",
-			   vs->base.src_rect.width, vs->base.src_rect.height,
-			   vs->base.src_rect.left, vs->base.src_rect.top);
+			   src->width, src->height, src->left, src->top);
 		return -1;
 	}
-	format.width = vs->base.src_rect.width;
-	format.height = vs->base.src_rect.height;
+	format.width = src->width;
+	format.height = src->height;
 
 	// this is an output towards BRU. this shall be consistent among all inputs.
 	format.code = V4L2_MBUS_FMT_ARGB8888_1X32;
@@ -802,8 +818,8 @@ vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct
 		}
 
 		// a source of UDS should be the same as a sink of BRU.
-		format.width  = vs->base.dst_rect.width;
-		format.height = vs->base.dst_rect.height;
+		format.width  = dst->width;
+		format.height = dst->height;
 		if (v4l2_subdev_set_format(scaler->outfmt_pad->entity, &format, scaler->outfmt_pad->index,
 					   V4L2_SUBDEV_FORMAT_ACTIVE)) {
 			weston_log("set output format of UDS via subdev failed.\n");
@@ -819,11 +835,10 @@ vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct
 	}
 
 	// set a composition paramters
-	if (v4l2_subdev_set_selection(mpad->compose_pad->entity, &vs->base.dst_rect, mpad->compose_pad->index,
+	if (v4l2_subdev_set_selection(mpad->compose_pad->entity, dst, mpad->compose_pad->index,
 				      V4L2_SEL_TGT_COMPOSE, V4L2_SUBDEV_FORMAT_ACTIVE)) {
 		weston_log("set compose parameter failed: %dx%d@(%d,%d).\n",
-			   vs->base.dst_rect.width, vs->base.dst_rect.height,
-			   vs->base.dst_rect.left, vs->base.dst_rect.top);
+			   dst->width, dst->height, dst->left, dst->top);
 		return -1;
 	}
 
@@ -832,7 +847,7 @@ vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_media_pad *mpad, struct
 		return -1;
 
 	// set input format
-	if (vsp_set_format(mpad->fd, &vs->fmt))
+	if (vsp_set_format(mpad->fd, &vs->fmt, input->opaque))
 		return -1;
 
 	// request a buffer
@@ -855,15 +870,12 @@ vsp_comp_flush(struct vsp_device *vsp)
 	DBG("flush vsp composition.\n");
 
 	// enable links and queue buffer
-	for (i = 0; i < vsp->input_count; i++) {
-		struct vsp_input *input = &vsp->inputs[i];
-		vsp_comp_setup_inputs(vsp, &input->input_pads, input->use_scaler,
-				      input->input_surface_states, 1);
-	}
+	for (i = 0; i < vsp->input_count; i++)
+		vsp_comp_setup_inputs(vsp, &vsp->inputs[i], 1);
 
 	// disable unused inputs
 	for (i = vsp->input_count; i < vsp->input_max; i++)
-		vsp_comp_setup_inputs(vsp, &vsp->inputs[i].input_pads, NULL, NULL, 0);
+		vsp_comp_setup_inputs(vsp, &vsp->inputs[i], 0);
 
 	// get an output pad
 	fd = vsp->output_pad.fd;
@@ -911,7 +923,7 @@ vsp_comp_flush(struct vsp_device *vsp)
 		for (i = 0; i < vsp->input_count; i++) {
 			struct vsp_input *input = &vsp->inputs[i];
 			if (input->use_scaler) {
-				vsp_comp_setup_inputs(vsp, &input->input_pads, input->use_scaler, NULL, 0);
+				vsp_comp_setup_inputs(vsp, input, 0);
 				input->use_scaler->input = -1;
 				input->use_scaler = NULL;
 			}
@@ -940,49 +952,50 @@ vsp_comp_finish(struct v4l2_renderer_device *dev)
 	vsp->output_surface_state = NULL;
 }
 
+#define IS_IDENTICAL_RECT(a, b) ((a)->width == (b)->width && (a)->height == (b)->height && \
+				 (a)->left  == (b)->left  && (a)->top    == (b)->top)
+
 static int
-vsp_comp_draw_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *surface_state)
+vsp_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v4l2_rect *src, struct v4l2_rect *dst,
+		 int opaque)
 {
-	struct vsp_device *vsp = (struct vsp_device*)dev;
-	struct vsp_surface_state *vs = (struct vsp_surface_state*)surface_state;
 	int should_use_scaler = 0;
+	struct vsp_input *input;
 
-	if (vs->base.src_rect.width > 8190 || vs->base.src_rect.height > 8190) {
-		weston_log("ignoring the size exceeding the limit (8190x8190) < (%dx%d)\n", vs->base.src_rect.width, vs->base.src_rect.height);
-		return -1;
+	if (src->width < 1 || src->height < 1) {
+		weston_log("ignoring the size of zeros < (%dx%d)\n", src->width, src->height);
+		return 0;
 	}
 
-	if (vs->base.src_rect.width < 1 || vs->base.src_rect.height < 1) {
-		weston_log("ignoring the size of zeros < (%dx%d)\n", vs->base.src_rect.width, vs->base.src_rect.height);
-		return -1;
+	if (src->width > 8190 || src->height > 8190) {
+		weston_log("ignoring the size exceeding the limit (8190x8190) < (%dx%d)\n", src->width, src->height);
+		return 0;
 	}
 
-	if (vs->base.dst_rect.width != vs->base.src_rect.width || vs->base.dst_rect.height != vs->base.src_rect.height) {
-		if (vs->base.src_rect.width < VSP_SCALER_MIN_PIXELS || vs->base.src_rect.height < VSP_SCALER_MIN_PIXELS) {
+	if (dst->width != src->width || dst->height != src->height) {
+		if (src->width < VSP_SCALER_MIN_PIXELS || src->height < VSP_SCALER_MIN_PIXELS) {
 			weston_log("ignoring the size the scaler can't handle (input size=%dx%d).\n",
-				vs->base.src_rect.width, vs->base.src_rect.height);
-			return -1;
+				   src->width, src->height);
+			return 0;
 		}
 		should_use_scaler = 1;
 	}
 
-	if (vs->base.src_rect.left < 0) {
-		vs->base.src_rect.width += vs->base.src_rect.left;
-		vs->base.src_rect.left = 0;
+	if (src->left < 0) {
+		src->width += src->left;
+		src->left = 0;
 	}
 
-	if (vs->base.src_rect.top < 0) {
-		vs->base.src_rect.height += vs->base.src_rect.top;
-		vs->base.src_rect.top = 0;
+	if (src->top < 0) {
+		src->height += src->top;
+		src->top = 0;
 	}
 
 	DBG("set input %d (dmafd=%d): %dx%d@(%d,%d)->%dx%d@(%d,%d). alpha=%f\n",
 	    vsp->input_count,
 	    vs->base.planes[0].dmafd,
-	    vs->base.src_rect.width, vs->base.src_rect.height,
-	    vs->base.src_rect.left, vs->base.src_rect.top,
-	    vs->base.dst_rect.width, vs->base.dst_rect.height,
-	    vs->base.dst_rect.left, vs->base.dst_rect.top,
+	    src->width, src->height, src->left, src->top,
+	    dst->width, dst->height, dst->left, dst->top,
 	    vs->base.alpha);
 
 	switch(vsp->state) {
@@ -995,7 +1008,9 @@ vsp_comp_draw_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *
 		if (vsp->input_count == 0) {
 			DBG("VSP_STATE_COMPOSING -> START (compose with output)\n");
 			vsp->state = VSP_STATE_START;
-			if (vsp_comp_draw_view(dev, (struct v4l2_surface_state*)vsp->output_surface_state) < 0)
+			if (vsp_do_draw_view(vsp, vsp->output_surface_state,
+					     &vsp->output_surface_state->base.src_rect,
+					     &vsp->output_surface_state->base.dst_rect, 0) < 0)
 				return -1;
 		}
 		break;
@@ -1005,30 +1020,54 @@ vsp_comp_draw_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *
 		return -1;
 	}
 
+	input = &vsp->inputs[vsp->input_count];
+
 	/* check if we need to use a scaler */
 	if (should_use_scaler) {
-		DBG("We need scaler! scaler! scaler! (%dx%d)->(%dx%d)\n",
-		    vs->base.src_rect.width, vs->base.src_rect.height,
-		    vs->base.dst_rect.width, vs->base.dst_rect.height);
+		DBG("We need to use a scaler. (%dx%d)->(%dx%d)\n",
+		    src->width, src->height, dst->width, dst->height);
 
 		// if all scalers are oocupied, flush and then retry.
 		if (vsp->scaler_count == vsp->scaler_max) {
 			vsp_comp_flush(vsp);
-			return vsp_comp_draw_view(dev, surface_state);
+			return vsp_do_draw_view(vsp, vs, src, dst, opaque);
 		}
 
 		vsp->scalers[vsp->scaler_count].input = vsp->input_count;
-		vsp->inputs[vsp->input_count].use_scaler = &vsp->scalers[vsp->scaler_count];
+		input->use_scaler = &vsp->scalers[vsp->scaler_count];
 		vsp->scaler_count++;
 	}
 
 	// get an available input pad
-	vsp->inputs[vsp->input_count].input_surface_states = vs;
+	input->input_surface_states = vs;
+	input->src = src;
+	input->dst = dst;
+	input->opaque = opaque;
 
 	// check if we should flush now
 	vsp->input_count++;
 	if (vsp->input_count == vsp->input_max)
 		vsp_comp_flush(vsp);
+
+	return 0;
+}
+
+static int
+vsp_comp_draw_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *surface_state)
+{
+	struct vsp_device *vsp = (struct vsp_device*)dev;
+	struct vsp_surface_state *vs = (struct vsp_surface_state*)surface_state;
+
+	DBG("start rendering a view.\n");
+	if (!IS_IDENTICAL_RECT(&surface_state->dst_rect, &surface_state->opaque_dst_rect)) {
+		DBG("rendering non-opaque region.\n");
+		if (vsp_do_draw_view(vsp, vs, &surface_state->src_rect, &surface_state->dst_rect, 0) < 0)
+			return -1;
+	}
+
+	DBG("rendering opaque region if available.\n");
+	if (vsp_do_draw_view(vsp, vs, &surface_state->opaque_src_rect, &surface_state->opaque_dst_rect, 1) < 0)
+		return -1;
 
 	return 0;
 }
