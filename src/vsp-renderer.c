@@ -937,7 +937,7 @@ vsp_comp_finish(struct v4l2_renderer_device *dev)
 }
 
 static int
-vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *surface_state)
+vsp_comp_draw_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *surface_state)
 {
 	struct vsp_device *vsp = (struct vsp_device*)dev;
 	struct vsp_surface_state *vs = (struct vsp_surface_state*)surface_state;
@@ -991,7 +991,7 @@ vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *s
 		if (vsp->input_count == 0) {
 			DBG("VSP_STATE_COMPOSING -> START (compose with output)\n");
 			vsp->state = VSP_STATE_START;
-			if (vsp_comp_set_view(dev, (struct v4l2_surface_state*)vsp->output_surface_state) < 0)
+			if (vsp_comp_draw_view(dev, (struct v4l2_surface_state*)vsp->output_surface_state) < 0)
 				return -1;
 		}
 		break;
@@ -1010,7 +1010,7 @@ vsp_comp_set_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *s
 		// if all scalers are oocupied, flush and then retry.
 		if (vsp->scaler_count == vsp->scaler_max) {
 			vsp_comp_flush(vsp);
-			return vsp_comp_set_view(dev, surface_state);
+			return vsp_comp_draw_view(dev, surface_state);
 		}
 
 		vsp->scalers[vsp->scaler_count].input = vsp->input_count;
@@ -1055,7 +1055,7 @@ WL_EXPORT struct v4l2_device_interface v4l2_device_interface = {
 
 	.begin_compose = vsp_comp_begin,
 	.finish_compose = vsp_comp_finish,
-	.draw_view = vsp_comp_set_view,
+	.draw_view = vsp_comp_draw_view,
 
 	.get_capabilities = vsp_get_capabilities,
 };
