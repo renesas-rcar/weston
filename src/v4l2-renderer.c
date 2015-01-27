@@ -384,14 +384,29 @@ set_v4l2_rect(pixman_region32_t *region, struct v4l2_rect *rect)
 }
 
 static void
-draw_view(struct weston_view *ev, struct weston_output *output,
-	  pixman_transform_t *transform,
-	  pixman_region32_t *region, pixman_region32_t *opaque_region,
-	  pixman_region32_t *translated_opaque_region)
+draw_view(struct weston_view *ev, struct weston_output *output)
 {
 	struct v4l2_renderer *renderer = (struct v4l2_renderer*)output->compositor->renderer;
 	struct v4l2_surface_state *vs = get_surface_state(ev->surface);
 	pixman_region32_t dst_region, src_region;
+	pixman_region32_t region, opaque_src_region, opaque_dst_region;
+	pixman_transform_t transform;
+
+	/* a surface in the repaint area? */
+	pixman_region32_init(&region);
+	pixman_region32_intersect(&region,
+				  &ev->transform.boundingbox,
+				  &output->region);
+	pixman_region32_subtract(&region, &region, &ev->clip);
+	if (!pixman_region32_not_empty(&region)) {
+		DBG("%s: skipping a view: not visible: view=(%d,%d)-(%d,%d), repaint=(%d,%d)-(%d,%d)\n",
+		    __func__,
+		    ev->transform.boundingbox.extents.x1, ev->transform.boundingbox.extents.y1,
+		    ev->transform.boundingbox.extents.x2, ev->transform.boundingbox.extents.y2,
+		    output->region.extents.x1, output->region.extents.y1,
+		    output->region.extents.x2, output->region.extents.y2);
+		return;
+	}
 
 	/* you may sometime get not-yet-attached views */
 	if (vs->planes[0].dmafd == 0)
@@ -410,18 +425,37 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 		return;
 	}
 
+	/* we have to compute a transform matrix */
+	calculate_transform_matrix(ev, output, &transform);
+
+	pixman_region32_init(&opaque_src_region);
+	pixman_region32_init(&opaque_dst_region);
+
+	if (pixman_region32_not_empty(&ev->surface->opaque)) {
+		pixman_region32_t output_region;
+		pixman_transform_t inverse;
+
+		pixman_transform_invert(&inverse, &transform);
+		transform_region(&inverse, &ev->surface->opaque, &opaque_dst_region);
+
+		pixman_region32_init_rect(&output_region, 0, 0, output->width, output->height);
+
+		pixman_region32_intersect(&opaque_dst_region, &opaque_dst_region, &output_region);
+		transform_region(&transform, &opaque_dst_region, &opaque_src_region);
+	}
+
 	/* find out the final destination in the output coordinate */
 	pixman_region32_init(&dst_region);
-	pixman_region32_copy(&dst_region, region);
+	pixman_region32_copy(&dst_region, &region);
 	region_global_to_output(output, &dst_region);
 
-	transform_region(transform, &dst_region, &src_region);
+	transform_region(&transform, &dst_region, &src_region);
 	set_v4l2_rect(&dst_region, &vs->dst_rect);
 	set_v4l2_rect(&src_region, &vs->src_rect);
 
 	/* setup opaque region */
-	set_v4l2_rect(translated_opaque_region, &vs->opaque_dst_rect);
-	set_v4l2_rect(opaque_region, &vs->opaque_src_rect);
+	set_v4l2_rect(&opaque_dst_region, &vs->opaque_dst_rect);
+	set_v4l2_rect(&opaque_src_region, &vs->opaque_src_rect);
 
 	vs->alpha = ev->alpha;
 
@@ -435,134 +469,26 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 
 	device_interface->draw_view(renderer->device, vs);
 
+	pixman_region32_fini(&region);
 	pixman_region32_fini(&dst_region);
 	pixman_region32_fini(&src_region);
+	pixman_region32_fini(&opaque_src_region);
+	pixman_region32_fini(&opaque_dst_region);
 }
-
-struct visible_view {
-	struct weston_view *view;
-	struct wl_list link;
-	pixman_region32_t repaint_region;
-	pixman_region32_t opaque_region;
-	pixman_region32_t clipped_opaque_region;
-	pixman_transform_t transform;
-};
 
 static void
 repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 {
-	struct v4l2_output_state *vo = get_output_state(output);
 	struct weston_compositor *compositor = output->compositor;
+	struct v4l2_output_state *vo = get_output_state(output);
 	struct v4l2_renderer *renderer = (struct v4l2_renderer*)compositor->renderer;
 	struct weston_view *view;
 
-	struct wl_list visible_view_list;
-	static struct visible_view *visible_views = NULL, *vview;
-	static int max_visible_views = 0;
-	int n, length;
-	pixman_region32_t final_opaque_region;
-	pixman_region32_t local_output_region;
-
 	device_interface->begin_compose(renderer->device, vo->output);
 
-	// create a container
-	if ((length = wl_list_length(&compositor->view_list)) > max_visible_views) {
-		visible_views = realloc(visible_views, length * sizeof(struct visible_view));
-		max_visible_views = length;
-	}
-	DBG(">> %d views found\n", length);
-
-	n = 0;
-	pixman_region32_init_rect(&local_output_region, 0, 0, output->width, output->height);
-	pixman_region32_init(&final_opaque_region);
-	wl_list_init(&visible_view_list);
-	wl_list_for_each(view, &compositor->view_list, link) {
-		if (view->plane == &compositor->primary_plane) {
-			pixman_region32_t region;
-			pixman_region32_t visible_region;
-
-			/* a surface in the repaint area? */
-			pixman_region32_init(&region);
-			pixman_region32_intersect(&region,
-						  &view->transform.boundingbox,
-						  &output->region);
-			pixman_region32_subtract(&region, &region, &view->clip);
-			if (!pixman_region32_not_empty(&region)) {
-				DBG("%s: skipping a view: not on this output: view=(%d,%d)-(%d,%d), repaint=(%d,%d)-(%d,%d)\n",
-				    __func__,
-				    view->transform.boundingbox.extents.x1, view->transform.boundingbox.extents.y1,
-				    view->transform.boundingbox.extents.x2, view->transform.boundingbox.extents.y2,
-				    output->region.extents.x1, output->region.extents.y1,
-				    output->region.extents.x2, output->region.extents.y2);
-				continue;
-			}
-
-			pixman_region32_init(&visible_region);
-			pixman_region32_subtract(&visible_region,
-						 &region, &final_opaque_region);
-			if (pixman_region32_not_empty(&visible_region)) {
-				pixman_transform_t *transform = &visible_views[n].transform;
-				pixman_region32_t *repaint_region = &visible_views[n].repaint_region;
-				pixman_region32_t *opaque_region = &visible_views[n].opaque_region;
-				pixman_region32_t *clipped_opaque_region = &visible_views[n].clipped_opaque_region;
-
-				DBG("%s: visible view found [%d] - surface=(%d,%d)-(%d,%d)\n",
-				    __func__, n,
-				    region.extents.x1, region.extents.y1,
-				    region.extents.x2, region.extents.y2);
-
-				/* we have to compute a transform matrix */
-				calculate_transform_matrix(view, output, transform);
-
-				visible_views[n].view = view;
-
-				pixman_region32_init(repaint_region);
-				pixman_region32_copy(repaint_region, &region);
-
-				pixman_region32_init(opaque_region);
-				pixman_region32_init(clipped_opaque_region);
-
-				wl_list_insert(&visible_view_list, &visible_views[n].link);
-
-				/* add its opaque region if it's not empty */
-				DBG("%s: checking opaque region: (%d,%d)-(%d,%d).\n", __func__,
-				    view->surface->opaque.extents.x1, view->surface->opaque.extents.y1,
-				    view->surface->opaque.extents.x2, view->surface->opaque.extents.y2);
-				if (pixman_region32_not_empty(&view->surface->opaque)) {
-					pixman_transform_t inverse;
-
-					DBG("%s: opaque region is not empty.\n", __func__);
-
-					pixman_transform_invert(&inverse, transform);
-					transform_region(&inverse, &view->surface->opaque, opaque_region);
-
-					pixman_region32_intersect(opaque_region, opaque_region, &local_output_region);
-					pixman_region32_union(&final_opaque_region, &final_opaque_region, opaque_region);
-
-					transform_region(transform, opaque_region, clipped_opaque_region);
-				}
-
-				n++;
-			} else {
-				DBG("%s: skipping a view: under opaque region: surface=(%d,%d)-(%d,%d), opaque=(%d,%d)-(%d,%d)\n",
-				    __func__,
-				    region.extents.x1, region.extents.y1,
-				    region.extents.x2, region.extents.y2,
-				    final_opaque_region.extents.x1, final_opaque_region.extents.y1,
-				    final_opaque_region.extents.x2, final_opaque_region.extents.y2);
-			}
-			pixman_region32_fini(&region);
-			pixman_region32_fini(&visible_region);
-		}
-	}
-	pixman_region32_fini(&final_opaque_region);
-
-	DBG("%s: %d views to renderer\n", __func__, wl_list_length(&visible_view_list));
-	wl_list_for_each(vview, &visible_view_list, link) {
-		draw_view(vview->view, output, &vview->transform, &vview->repaint_region, &vview->clipped_opaque_region, &vview->opaque_region);
-		pixman_region32_fini(&vview->repaint_region);
-		pixman_region32_fini(&vview->opaque_region);
-		pixman_region32_fini(&vview->clipped_opaque_region);
+	wl_list_for_each_reverse(view, &compositor->view_list, link) {
+		if (view->plane == &compositor->primary_plane)
+			draw_view(view, output);
 	}
 
 	device_interface->finish_compose(renderer->device);
