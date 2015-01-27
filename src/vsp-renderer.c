@@ -176,6 +176,12 @@ typedef enum {
 	VSP_STATE_COMPOSING,
 } vsp_state_t;
 
+struct vsp_input {
+	struct vsp_media_pad input_pads;
+	struct vsp_surface_state *input_surface_states;
+	struct vsp_scaler *use_scaler;
+};
+
 struct vsp_device {
 	struct v4l2_renderer_device base;
 
@@ -186,9 +192,7 @@ struct vsp_device {
 
 	int input_count;
 	int input_max;
-	struct vsp_media_pad input_pads[VSP_INPUT_MAX];
-	struct vsp_surface_state *input_surface_states[VSP_INPUT_MAX];
-	struct vsp_scaler *use_scaler[VSP_INPUT_MAX];
+	struct vsp_input inputs[VSP_INPUT_MAX];
 
 	int scaler_count;
 	int scaler_max;
@@ -284,8 +288,6 @@ vsp_init(struct media_device *media)
 	vsp->state = VSP_STATE_IDLE;
 	vsp->input_max = VSP_INPUT_MAX;
 	vsp->scaler_max = VSP_SCALER_MAX;
-	if (!vsp->input_pads)
-		goto error;
 
 	/* Reset links */
 	if (media_reset_links(media)) {
@@ -296,6 +298,8 @@ vsp_init(struct media_device *media)
 	/* Initialize inputs */
 	weston_log("Setting up inputs.\n");
 	for (i = 0; i < vsp->input_max; i++) {
+		struct vsp_media_pad *pads = &vsp->inputs[i].input_pads;
+
 		/* setup a link - do not enable yet */
 		snprintf(buf, sizeof(buf), vsp_input_links[i], device_name, device_name);
 		weston_log("setting up link: '%s'\n", buf);
@@ -304,33 +308,33 @@ vsp_init(struct media_device *media)
 			weston_log("link set up failed.\n");
 			goto error;
 		}
-		vsp->input_pads[i].link = link;
+		pads->link = link;
 
 		/* get a pad to configure the compositor */
 		snprintf(buf, sizeof(buf), vsp_input_infmt[i], device_name);
 		weston_log("get an input pad: '%s'\n", buf);
-		if (!(vsp->input_pads[i].infmt_pad = media_parse_pad(media, buf, NULL))) {
+		if (!(pads->infmt_pad = media_parse_pad(media, buf, NULL))) {
 			weston_log("parse pad failed.\n");
 			goto error;
 		}
 
 		snprintf(buf, sizeof(buf), vsp_input_outfmt[i], device_name);
 		weston_log("get an input sink: '%s'\n", buf);
-		if (!(vsp->input_pads[i].outfmt_pad = media_parse_pad(media, buf, NULL))) {
+		if (!(pads->outfmt_pad = media_parse_pad(media, buf, NULL))) {
 			weston_log("parse pad failed.\n");
 			goto error;
 		}
 
 		snprintf(buf, sizeof(buf), vsp_input_composer[i], device_name);
 		weston_log("get a composer pad: '%s'\n", buf);
-		if (!(vsp->input_pads[i].compose_pad = media_parse_pad(media, buf, NULL))) {
+		if (!(pads->compose_pad = media_parse_pad(media, buf, NULL))) {
 			weston_log("parse pad failed.\n");
 			goto error;
 		}
 
 		snprintf(buf, sizeof(buf), vsp_input_subdev[i], device_name);
 		weston_log("get a input subdev pad: '%s'\n", buf);
-		if (!(vsp->input_pads[i].input_entity = media_get_entity_by_name(media, buf, strlen(buf)))) {
+		if (!(pads->input_entity = media_get_entity_by_name(media, buf, strlen(buf)))) {
 			weston_log("parse entity failed.\n");
 			goto error;
 		}
@@ -348,8 +352,8 @@ vsp_init(struct media_device *media)
 			goto error;
 		}
 
-		vsp->input_pads[i].fd = entity->fd;
-		vsp_check_capabiility(vsp->input_pads[i].fd, media_entity_get_devname(entity));
+		pads->fd = entity->fd;
+		vsp_check_capabiility(pads->fd, media_entity_get_devname(entity));
 
 		/* set an input format for BRU to be ARGB (default) */
 		{
@@ -359,8 +363,8 @@ vsp_init(struct media_device *media)
 				.code = V4L2_MBUS_FMT_ARGB8888_1X32
 			};
 
-			if (v4l2_subdev_set_format(vsp->input_pads[i].compose_pad->entity, &format,
-						   vsp->input_pads[i].compose_pad->index,
+			if (v4l2_subdev_set_format(pads->compose_pad->entity, &format,
+						   pads->compose_pad->index,
 					           V4L2_SUBDEV_FORMAT_ACTIVE)) {
 				weston_log("setting default failed.\n");
 				goto error;
@@ -450,11 +454,8 @@ vsp_init(struct media_device *media)
 	return (struct v4l2_renderer_device*)vsp;
 
 error:
-	if (vsp) {
-		if (vsp->input_pads)
-			free(vsp->input_pads);
+	if (vsp)
 		free(vsp);
-	}
 	weston_log("VSP device init failed...\n");
 
 	return NULL;
@@ -854,13 +855,15 @@ vsp_comp_flush(struct vsp_device *vsp)
 	DBG("flush vsp composition.\n");
 
 	// enable links and queue buffer
-	for (i = 0; i < vsp->input_count; i++)
-		vsp_comp_setup_inputs(vsp, &vsp->input_pads[i], vsp->use_scaler[i],
-				      vsp->input_surface_states[i], 1);
+	for (i = 0; i < vsp->input_count; i++) {
+		struct vsp_input *input = &vsp->inputs[i];
+		vsp_comp_setup_inputs(vsp, &input->input_pads, input->use_scaler,
+				      input->input_surface_states, 1);
+	}
 
 	// disable unused inputs
 	for (i = vsp->input_count; i < vsp->input_max; i++)
-		vsp_comp_setup_inputs(vsp, &vsp->input_pads[i], NULL, NULL, 0);
+		vsp_comp_setup_inputs(vsp, &vsp->inputs[i].input_pads, NULL, NULL, 0);
 
 	// get an output pad
 	fd = vsp->output_pad.fd;
@@ -874,7 +877,7 @@ vsp_comp_flush(struct vsp_device *vsp)
 	// stream on
 	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	for (i = 0; i < vsp->input_count; i++) {
-		if (ioctl(vsp->input_pads[i].fd, VIDIOC_STREAMON, &type) == -1) {
+		if (ioctl(vsp->inputs[i].input_pads.fd, VIDIOC_STREAMON, &type) == -1) {
 			weston_log("VIDIOC_STREAMON failed for input %d. (%s)\n", i, strerror(errno));
 		}
 	}
@@ -898,7 +901,7 @@ vsp_comp_flush(struct vsp_device *vsp)
 	// stream off
 	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	for (i = 0; i < vsp->input_count; i++) {
-		if (ioctl(vsp->input_pads[i].fd, VIDIOC_STREAMOFF, &type) == -1) {
+		if (ioctl(vsp->inputs[i].input_pads.fd, VIDIOC_STREAMOFF, &type) == -1) {
 			weston_log("VIDIOC_STREAMOFF failed for input %d.\n", i);
 		}
 	}
@@ -906,10 +909,11 @@ vsp_comp_flush(struct vsp_device *vsp)
 	// disable UDS if used
 	if (vsp->scaler_count) {
 		for (i = 0; i < vsp->input_count; i++) {
-			if (vsp->use_scaler[i]) {
-				vsp_comp_setup_inputs(vsp, &vsp->input_pads[i], vsp->use_scaler[i], NULL, 0);
-				vsp->use_scaler[i]->input = -1;
-				vsp->use_scaler[i] = NULL;
+			struct vsp_input *input = &vsp->inputs[i];
+			if (input->use_scaler) {
+				vsp_comp_setup_inputs(vsp, &input->input_pads, input->use_scaler, NULL, 0);
+				input->use_scaler->input = -1;
+				input->use_scaler = NULL;
 			}
 		}
 		vsp->scaler_count = 0;
@@ -1014,12 +1018,12 @@ vsp_comp_draw_view(struct v4l2_renderer_device *dev, struct v4l2_surface_state *
 		}
 
 		vsp->scalers[vsp->scaler_count].input = vsp->input_count;
-		vsp->use_scaler[vsp->input_count] = &vsp->scalers[vsp->scaler_count];
+		vsp->inputs[vsp->input_count].use_scaler = &vsp->scalers[vsp->scaler_count];
 		vsp->scaler_count++;
 	}
 
 	// get an available input pad
-	vsp->input_surface_states[vsp->input_count] = vs;
+	vsp->inputs[vsp->input_count].input_surface_states = vs;
 
 	// check if we should flush now
 	vsp->input_count++;
