@@ -548,7 +548,7 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 		visible_views = realloc(visible_views, length * sizeof(struct visible_view));
 		max_visible_views = length;
 	}
-	weston_log(">> %d views found\n", length);
+	DBG(">> %d views found\n", length);
 
 	n = 0;
 	pixman_region32_init(&opaque_region);
