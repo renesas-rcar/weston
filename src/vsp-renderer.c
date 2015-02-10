@@ -963,7 +963,7 @@ vsp_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v4
 	struct vsp_input *input;
 
 	if (src->width < 1 || src->height < 1) {
-		weston_log("ignoring the size of zeros < (%dx%d)\n", src->width, src->height);
+		DBG("ignoring the size of zeros < (%dx%d)\n", src->width, src->height);
 		return 0;
 	}
 
