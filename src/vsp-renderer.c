@@ -481,19 +481,25 @@ vsp_attach_buffer(struct v4l2_surface_state *surface_state)
 		return -1;
 
 	switch(vs->base.pixel_format) {
+	case V4L2_PIX_FMT_XRGB32:
+	case V4L2_PIX_FMT_ARGB32:
 	case V4L2_PIX_FMT_XBGR32:
 	case V4L2_PIX_FMT_ABGR32:
 	case V4L2_PIX_FMT_RGB24:
+	case V4L2_PIX_FMT_BGR24:
 	case V4L2_PIX_FMT_RGB565:
+	case V4L2_PIX_FMT_RGB332:
 		code = V4L2_MBUS_FMT_ARGB8888_1X32;
 		break;
 
 	case V4L2_PIX_FMT_YUYV:
+	case V4L2_PIX_FMT_YVYU:
 	case V4L2_PIX_FMT_UYVY:
 	case V4L2_PIX_FMT_NV12M:
 	case V4L2_PIX_FMT_NV21M:
 	case V4L2_PIX_FMT_NV16M:
 	case V4L2_PIX_FMT_NV61M:
+	case V4L2_PIX_FMT_YUV420M:
 		code = V4L2_MBUS_FMT_AYUV8_1X32;
 		break;
 
