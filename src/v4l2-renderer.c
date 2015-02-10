@@ -1069,6 +1069,9 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 						    debug_binding, ec);
 
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGB565);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_XRGB8888);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_ARGB8888);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUYV);
 
 	wl_signal_init(&renderer->destroy_signal);
 
