@@ -564,7 +564,6 @@ drm_output_render_pixman(struct drm_output *output, pixman_region32_t *damage)
 {
 	struct weston_compositor *ec = output->base.compositor;
 	pixman_region32_t total_damage, previous_damage;
-	struct v4l2_bo_state bo;
 
 	pixman_region32_init(&total_damage);
 	pixman_region32_init(&previous_damage);
@@ -602,12 +601,8 @@ drm_output_render_v4l2(struct drm_output *output, pixman_region32_t *damage)
 
 	output->current_image ^= 1;
 
-	bo.dmafd = output->dumb[output->current_image]->dmafd;
-	bo.map = output->dumb[output->current_image]->map;
-	bo.stride = output->dumb[output->current_image]->stride;
-
 	output->next = output->dumb[output->current_image];
-	v4l2_renderer->set_output_buffer(&output->base, &bo);
+	v4l2_renderer->set_output_buffer(&output->base, output->current_image);
 
 	ec->renderer->repaint_output(&output->base, &total_damage);
 
@@ -2001,14 +1996,18 @@ drm_output_init_v4l2(struct drm_output *output, struct drm_compositor *c)
 	int w = output->base.current_mode->width;
 	int h = output->base.current_mode->height;
 	unsigned int i;
+	struct v4l2_bo_state bo_state[ARRAY_LENGTH(output->dumb)];
 
 	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
 		output->dumb[i] = drm_fb_create_dumb(c, w, h);
 		if (!output->dumb[i])
 			goto err;
+		bo_state[i].dmafd = output->dumb[i]->dmafd;
+		bo_state[i].map = output->dumb[i]->map;
+		bo_state[i].stride = output->dumb[i]->stride;
 	}
 
-	if (v4l2_renderer->output_create(&output->base) < 0)
+	if (v4l2_renderer->output_create(&output->base, bo_state, ARRAY_LENGTH(output->dumb)) < 0)
 		goto err;
 
 	pixman_region32_init_rect(&output->previous_damage,
