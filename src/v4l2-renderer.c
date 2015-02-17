@@ -73,6 +73,9 @@ struct v4l2_output_state {
 	struct v4l2_renderer_output *output;
 	uint32_t stride;
 	void *map;
+	struct v4l2_bo_state *bo;
+	int bo_count;
+	int bo_index;
 };
 
 struct v4l2_renderer {
@@ -126,7 +129,8 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 			 uint32_t width, uint32_t height)
 {
 	struct v4l2_output_state *vo = get_output_state(output);
-	uint32_t v, len = width * 4, stride = vo->stride * 4;
+	struct v4l2_bo_state *bo = &vo->bo[vo->bo_index];
+	uint32_t v, len = width * 4, stride = bo->stride * 4;
 	void *src, *dst;
 
 	switch(format) {
@@ -139,15 +143,15 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 	if (x == 0 && y == 0 &&
 	    width == (uint32_t)output->current_mode->width &&
 	    height == (uint32_t)output->current_mode->height &&
-	    vo->stride == len) {
+	    bo->stride == len) {
 		DBG("%s: copy entire buffer at once\n", __func__);
 		// TODO: we may want to optimize this using underlying
 		// V4L2 MC hardware if possible.
-		memcpy(pixels, vo->map, vo->stride * height);
+		memcpy(pixels, bo->map, bo->stride * height);
 		return 0;
 	}
 
-	src = vo->map + x * 4 + y * stride;
+	src = bo->map + x * 4 + y * stride;
 	dst = pixels;
 	for (v = y; v < height; v++) {
 		memcpy(dst, src, len);
@@ -1114,24 +1118,22 @@ error:
 }
 
 static void
-v4l2_renderer_output_set_buffer(struct weston_output *output, struct v4l2_bo_state *bo)
+v4l2_renderer_output_set_buffer(struct weston_output *output, int bo_index)
 {
 	struct v4l2_output_state *vo = get_output_state(output);
 
-	vo->stride = bo->stride;
-	vo->map = bo->map;
-
-	device_interface->set_output_buffer(vo->output, bo);
-
+	vo->bo_index = bo_index;
+	device_interface->set_output_buffer(vo->output, &vo->bo[bo_index]);
 	return;
 }
 
 static int
-v4l2_renderer_output_create(struct weston_output *output)
+v4l2_renderer_output_create(struct weston_output *output, struct v4l2_bo_state *bo_states, int count)
 {
 	struct v4l2_renderer *renderer = (struct v4l2_renderer*)output->compositor->renderer;
 	struct v4l2_output_state *vo;
 	struct v4l2_renderer_output *outdev;
+	int i;
 
 	if (!renderer)
 		return -1;
@@ -1149,6 +1151,15 @@ v4l2_renderer_output_create(struct weston_output *output)
 
 	output->renderer_state = vo;
 
+	if (!(vo->bo = calloc(1, sizeof(struct v4l2_bo_state) * count))) {
+		free(vo);
+		return -1;
+	}
+
+	for (i = 0; i < count; i++)
+		vo->bo[i] = bo_states[i];
+	vo->bo_count = count;
+
 	return 0;
 }
 
@@ -1156,6 +1167,8 @@ static void
 v4l2_renderer_output_destroy(struct weston_output *output)
 {
 	struct v4l2_output_state *vo = get_output_state(output);
+	if (vo->bo)
+		free(vo->bo);
 	free(vo);
 }
 

@@ -35,7 +35,7 @@ struct v4l2_bo_state {
 
 struct v4l2_renderer_interface {
 	int (*init)(struct weston_compositor *ec, int drm_fd, char *drm_fn);
-	int (*output_create)(struct weston_output *output);
+	int (*output_create)(struct weston_output *output, struct v4l2_bo_state *bo_states, int count);
 	void (*output_destroy)(struct weston_output *output);
-	void (*set_output_buffer)(struct weston_output *output, struct v4l2_bo_state *ro);
+	void (*set_output_buffer)(struct weston_output *output, int bo_index);
 };
