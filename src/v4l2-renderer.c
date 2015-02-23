@@ -130,7 +130,7 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 {
 	struct v4l2_output_state *vo = get_output_state(output);
 	struct v4l2_bo_state *bo = &vo->bo[vo->bo_index];
-	uint32_t v, len = width * 4, stride = bo->stride * 4;
+	uint32_t v, len = width * 4;
 	void *src, *dst;
 
 	switch(format) {
@@ -151,11 +151,11 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 		return 0;
 	}
 
-	src = bo->map + x * 4 + y * stride;
+	src = bo->map + x * 4 + y * bo->stride;
 	dst = pixels;
 	for (v = y; v < height; v++) {
 		memcpy(dst, src, len);
-		src += stride;
+		src += bo->stride;
 		dst += len;
 	}
 
