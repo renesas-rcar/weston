@@ -409,12 +409,12 @@ draw_view(struct weston_view *ev, struct weston_output *output)
 		    ev->transform.boundingbox.extents.x2, ev->transform.boundingbox.extents.y2,
 		    output->region.extents.x1, output->region.extents.y1,
 		    output->region.extents.x2, output->region.extents.y2);
-		return;
+		goto out;
 	}
 
 	/* you may sometime get not-yet-attached views */
 	if (vs->planes[0].dmafd == 0)
-		return;
+		goto out;
 
 	/*
 	 * Check if the surface is still valid. OpenGL/ES apps may destroy
@@ -422,11 +422,11 @@ draw_view(struct weston_view *ev, struct weston_output *output)
 	 * serialized world only.
 	 */
 	if (fcntl(vs->planes[0].dmafd, F_GETFD) < 0)
-		return;
+		goto out;
 
 	if (output->zoom.active) {
 		weston_log("v4l2 renderer does not support zoom\n");
-		return;
+		goto out;
 	}
 
 	/* we have to compute a transform matrix */
@@ -473,11 +473,12 @@ draw_view(struct weston_view *ev, struct weston_output *output)
 
 	device_interface->draw_view(renderer->device, vs);
 
-	pixman_region32_fini(&region);
 	pixman_region32_fini(&dst_region);
 	pixman_region32_fini(&src_region);
 	pixman_region32_fini(&opaque_src_region);
 	pixman_region32_fini(&opaque_dst_region);
+out:
+	pixman_region32_fini(&region);
 }
 
 static void
