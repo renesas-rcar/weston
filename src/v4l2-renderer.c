@@ -1075,7 +1075,7 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 	if (!device_interface)
 		goto error;
 
-	renderer->device = device_interface->init(renderer->media);
+	renderer->device = device_interface->init(renderer->media, ec->config);
 	if (!renderer->device)
 		goto error;
 
