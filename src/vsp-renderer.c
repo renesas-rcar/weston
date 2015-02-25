@@ -262,7 +262,7 @@ vsp_check_capabiility(int fd, const char *devname)
 }
 
 static struct v4l2_renderer_device*
-vsp_init(struct media_device *media)
+vsp_init(struct media_device *media, struct weston_config *config)
 {
 	struct vsp_device *vsp = NULL;
 	struct media_link *link;
@@ -271,6 +271,7 @@ vsp_init(struct media_device *media)
 	char buf[64], *p, *endp;
 	const char *device_name, *devname;
 	int i, j;
+	struct weston_config_section *section;
 	
 	/* Get device name */
 	info = media_get_info(media);
@@ -292,8 +293,17 @@ vsp_init(struct media_device *media)
 	vsp->base.media = media;
 	vsp->base.device_name = device_name;
 	vsp->state = VSP_STATE_IDLE;
-	vsp->input_max = VSP_INPUT_MAX;
 	vsp->scaler_max = VSP_SCALER_MAX;
+
+	/* check configuration */
+	section = weston_config_get_section(config,
+					    "vsp-renderer", NULL, NULL);
+	weston_config_section_get_int(section, "max_inputs", &vsp->input_max, VSP_INPUT_MAX);
+
+	if (vsp->input_max < 2)
+		vsp->input_max = 2;
+	if (vsp->input_max > VSP_INPUT_MAX)
+		vsp->input_max = VSP_INPUT_MAX;
 
 	/* Reset links */
 	if (media_reset_links(media)) {
@@ -302,7 +312,7 @@ vsp_init(struct media_device *media)
 	}
 	
 	/* Initialize inputs */
-	weston_log("Setting up inputs.\n");
+	weston_log("Setting up inputs. Use %d inputs.\n", vsp->input_max);
 	for (i = 0; i < vsp->input_max; i++) {
 		struct vsp_media_pad *pads = &vsp->inputs[i].input_pads;
 
