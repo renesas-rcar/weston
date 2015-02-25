@@ -210,6 +210,9 @@ video_debug_mediactl(void)
 	FILE *p = popen("media-ctl -d /dev/media0 -p", "r");
 	char buf[BUFSIZ * 16];
 
+	if (!p)
+		return;
+
 	weston_log("====== output of media-ctl ======\n");
 	while(!feof(p)) {
 		fread(buf, sizeof(buf), 1, p);
