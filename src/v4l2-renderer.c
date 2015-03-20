@@ -36,6 +36,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <linux/videodev2.h>
 #include <linux/v4l2-subdev.h>
@@ -559,10 +560,19 @@ v4l2_renderer_flush_damage(struct weston_surface *surface)
 static void
 v4l2_release_kms_bo(struct v4l2_surface_state *vs)
 {
+	int i;
+
 	if (!vs)
 		return;
 
 	if (vs->bo) {
+		for (i = 0; i < vs->num_planes; i++) {
+			if (vs->planes[i].dmafd >= 0) {
+				close(vs->planes[i].dmafd);
+				vs->planes[i].dmafd = -1;
+			}
+		}
+
 		if (kms_bo_unmap(vs->bo))
 			weston_log("kms_bo_unmap failed.\n");
 
@@ -646,6 +656,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	vs->pixel_format = pixel_format;
 	vs->num_planes = 1;
 	vs->planes[0].stride = stride;
+	vs->planes[0].dmafd = -1;
 	vs->bpp = bpp;
 
 	if (device_interface->attach_buffer(vs) == -1)
