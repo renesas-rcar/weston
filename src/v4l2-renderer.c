@@ -567,7 +567,7 @@ v4l2_release_kms_bo(struct v4l2_surface_state *vs)
 			weston_log("kms_bo_unmap failed.\n");
 
 		kms_bo_destroy(&vs->bo);
-		vs->bo = vs->addr = NULL;
+		vs->addr = NULL;
 	}
 }
 
@@ -684,14 +684,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	return 0;
 
 error:
-	if (vs->bo) {
-		if (vs->addr)
-			kms_bo_unmap(vs->bo);
-		vs->addr = NULL;
-
-		kms_bo_destroy(&vs->bo);
-		vs->bo = NULL;
-	}
+	v4l2_release_kms_bo(vs);
 	return -1;
 }
 
