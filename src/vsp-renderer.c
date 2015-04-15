@@ -568,6 +568,9 @@ vsp_set_format(int fd, struct v4l2_format *fmt, int opaque)
 		}
 	}
 
+	/* Input surfaces are premultiplied. */
+	fmt->fmt.pix_mp.flags = V4L2_PIX_FMT_FLAG_PREMUL_ALPHA;
+
 	ret = ioctl(fd, VIDIOC_S_FMT, fmt);
 
 	DBG("New video format: %d, %08x(%c%c%c%c) %ux%u (stride %u) field %08u buffer size %u\n",
