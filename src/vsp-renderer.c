@@ -561,15 +561,14 @@ vsp_set_format(int fd, struct v4l2_format *fmt, int opaque)
 	    current_fmt.fmt.pix_mp.field,
 	    current_fmt.fmt.pix_mp.plane_fmt[0].sizeimage);
 
-	if (opaque) {
-		switch (original_pixelformat) {
-		case V4L2_PIX_FMT_ABGR32:
+	switch (original_pixelformat) {
+	case V4L2_PIX_FMT_ABGR32:
+		if (opaque)
 			fmt->fmt.pix_mp.pixelformat = V4L2_PIX_FMT_XBGR32;
-		}
+		else
+			/* ABGR32 surfaces are premultiplied. */
+			fmt->fmt.pix_mp.flags = V4L2_PIX_FMT_FLAG_PREMUL_ALPHA;
 	}
-
-	/* Input surfaces are premultiplied. */
-	fmt->fmt.pix_mp.flags = V4L2_PIX_FMT_FLAG_PREMUL_ALPHA;
 
 	ret = ioctl(fd, VIDIOC_S_FMT, fmt);
 
