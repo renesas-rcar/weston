@@ -832,29 +832,27 @@ v4l2_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 		vs->buffer_destroy_listener.notify = NULL;
 	}
 
-	// if no buffer given, quit now.
-	if (!buffer)
-		return;
+	if (buffer) {
+		// for shm_buffer.
+		shm_buffer = wl_shm_buffer_get(buffer->resource);
 
-	// for shm_buffer.
-	shm_buffer = wl_shm_buffer_get(buffer->resource);
+		if (shm_buffer) {
+			ret = v4l2_renderer_attach_shm(vs, buffer, shm_buffer);
+		} else {
+			ret = v4l2_renderer_attach_dmabuf(vs, buffer);
+		}
 
-	if (shm_buffer) {
-		ret = v4l2_renderer_attach_shm(vs, buffer, shm_buffer);
-	} else {
-		ret = v4l2_renderer_attach_dmabuf(vs, buffer);
+		if (ret == -1) {
+			weston_buffer_reference(&vs->buffer_ref, NULL);
+			return;
+		}
+
+		// listen to the buffer destroy event.
+		vs->buffer_destroy_listener.notify =
+			buffer_state_handle_buffer_destroy;
+		wl_signal_add(&buffer->destroy_signal,
+			      &vs->buffer_destroy_listener);
 	}
-
-	if (ret == -1) {
-		weston_buffer_reference(&vs->buffer_ref, NULL);
-		return;
-	}
-
-	// listen to the buffer destroy event.
-	vs->buffer_destroy_listener.notify =
-		buffer_state_handle_buffer_destroy;
-	wl_signal_add(&buffer->destroy_signal,
-		      &vs->buffer_destroy_listener);
 }
 
 static void
