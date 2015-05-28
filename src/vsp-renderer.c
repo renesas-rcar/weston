@@ -180,8 +180,8 @@ struct vsp_input {
 	struct vsp_media_pad input_pads;
 	struct vsp_surface_state *input_surface_states;
 	struct vsp_scaler *use_scaler;
-	struct v4l2_rect *src;
-	struct v4l2_rect *dst;
+	struct v4l2_rect src;
+	struct v4l2_rect dst;
 	int opaque;
 };
 
@@ -766,8 +766,8 @@ vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, int enabl
 	struct vsp_media_pad *mpad = &input->input_pads;
 	struct vsp_scaler *scaler = input->use_scaler;
 	struct vsp_surface_state *vs = input->input_surface_states;
-	struct v4l2_rect *src = input->src;
-	struct v4l2_rect *dst = input->dst;
+	struct v4l2_rect *src = &input->src;
+	struct v4l2_rect *dst = &input->dst;
 
 	// enable link associated with this pad
 	if (!scaler) {
@@ -1061,8 +1061,8 @@ vsp_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v4
 
 	// get an available input pad
 	input->input_surface_states = vs;
-	input->src = src;
-	input->dst = dst;
+	input->src = *src;
+	input->dst = *dst;
 	input->opaque = opaque;
 
 	// check if we should flush now
