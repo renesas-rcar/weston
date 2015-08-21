@@ -699,6 +699,17 @@ error:
 	return -1;
 }
 
+static void
+kms_buffer_state_handle_buffer_destroy(struct wl_listener *listener, void *data)
+{
+	struct v4l2_surface_state *vs;
+
+	vs = container_of(listener, struct v4l2_surface_state,
+			  kms_buffer_destroy_listener);
+	vs->planes[0].dmafd = 0;
+	vs->kms_buffer_destroy_listener.notify = NULL;
+}
+
 static int
 v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer *buffer)
 {
@@ -809,6 +820,15 @@ v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer 
 	if (device_interface->attach_buffer(vs) == -1)
 		return -1;
 
+	if (vs->kms_buffer_destroy_listener.notify) {
+		wl_list_remove(&vs->kms_buffer_destroy_listener.link);
+		vs->kms_buffer_destroy_listener.notify = NULL;
+	}
+	vs->kms_buffer_destroy_listener.notify
+		= kms_buffer_state_handle_buffer_destroy;
+	wl_resource_add_destroy_listener(kbuf->resource,
+					 &vs->kms_buffer_destroy_listener);
+
 	DBG("%s: %dx%d buffer attached (dmabuf=%d, stride=%d).\n", __func__, kbuf->width, kbuf->height, kbuf->fd, kbuf->stride);
 
 	return 0;
@@ -866,6 +886,11 @@ v4l2_renderer_surface_state_destroy(struct v4l2_surface_state *vs)
 	}
 
 	vs->surface->renderer_state = NULL;
+
+	if (vs->kms_buffer_destroy_listener.notify) {
+		wl_list_remove(&vs->kms_buffer_destroy_listener.link);
+		vs->kms_buffer_destroy_listener.notify = NULL;
+	}
 
 	// TODO: Release any resources associated to the surface here.
 

@@ -70,6 +70,7 @@ struct v4l2_surface_state {
 	struct wl_listener buffer_destroy_listener;
 	struct wl_listener surface_destroy_listener;
 	struct wl_listener renderer_destroy_listener;
+	struct wl_listener kms_buffer_destroy_listener;
 };
 
 struct v4l2_device_interface {
