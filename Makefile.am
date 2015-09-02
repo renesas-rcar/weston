@@ -218,12 +218,10 @@ endif
 if ENABLE_V4L2
 module_LTLIBRARIES += v4l2-renderer.la
 v4l2_renderer_la_LDFLAGS = -module -avoid-version
-v4l2_renderer_la_LIBADD = $(COMPOSITOR_LIBS) $(LIBDRM_LIBS) $(LIBKMS_LIBS) $(WAYLAND_KMS_LIBS)
+v4l2_renderer_la_LIBADD = $(COMPOSITOR_LIBS) $(V4L2_RENDERER_LIBS)
 v4l2_renderer_la_CFLAGS =				\
 	$(COMPOSITOR_CFLAGS)			\
-	$(LIBDRM_CFLAGS) \
-	$(LIBKMS_CFLAGS) \
-	$(WAYLAND_KMS_CFLAGS) \
+	$(V4L2_RENDERER_CFLAGS) \
 	$(GCC_CFLAGS)
 v4l2_renderer_la_SOURCES =			\
 	src/v4l2-renderer.c			\
