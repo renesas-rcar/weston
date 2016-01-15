@@ -1048,7 +1048,7 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 {
 	struct v4l2_renderer *renderer;
 	char *device;
-	const char *device_name;
+	const char *device_name = NULL;
 	const struct media_device_info *info;
 	struct weston_config_section *section;
 
@@ -1140,9 +1140,14 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 
 	wl_signal_init(&renderer->destroy_signal);
 
+	free((void *)device_name);
+	free(device);
 	return 0;
 
 error:
+	if (device_name)
+		free((void *)device_name);
+	free(device);
 	free(renderer);
 	weston_log("V4L2 renderer initialization failed.\n");
 	return -1;
@@ -1175,8 +1180,10 @@ v4l2_renderer_output_create(struct weston_output *output, struct v4l2_bo_state *
 	if (!outdev)
 		return -1;
 
-	if (!(vo = calloc(1, sizeof *vo)))
+	if (!(vo = calloc(1, sizeof *vo))) {
+		free(outdev);
 		return -1;
+	}
 
 	vo->output = outdev;
 
@@ -1184,6 +1191,7 @@ v4l2_renderer_output_create(struct weston_output *output, struct v4l2_bo_state *
 
 	if (!(vo->bo = calloc(1, sizeof(struct v4l2_bo_state) * count))) {
 		free(vo);
+		free(outdev);
 		return -1;
 	}
 
@@ -1200,6 +1208,8 @@ v4l2_renderer_output_destroy(struct weston_output *output)
 	struct v4l2_output_state *vo = get_output_state(output);
 	if (vo->bo)
 		free(vo->bo);
+	if (vo->output)
+		free(vo->output);
 	free(vo);
 }
 
