@@ -686,7 +686,10 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		weston_log("kms_bo_get_prop failed.\n");
 		goto error;
 	}
-	drmPrimeHandleToFD(fd, handle, DRM_CLOEXEC, &vs->planes[0].dmafd);
+	if (drmPrimeHandleToFD(fd, handle, DRM_CLOEXEC, &vs->planes[0].dmafd)) {
+	    weston_log("drmPrimeHandleToFD failed.\n");
+	    goto error;
+	}
 
 	v4l2_renderer_copy_buffer(vs, buffer);
 
