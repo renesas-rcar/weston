@@ -597,7 +597,7 @@ static int
 vsp_set_output(struct vsp_device *vsp, struct vsp_renderer_output *out)
 {
 	int i;
-	struct v4l2_mbus_framefmt format;
+	struct v4l2_mbus_framefmt format = { 0 };
 
 	DBG("Setting output size to %dx%d\n", out->base.width, out->base.height);
 
@@ -793,7 +793,7 @@ vsp_set_alpha(struct media_entity *entity, float alpha)
 static int
 vsp_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, int enable)
 {
-	struct v4l2_mbus_framefmt format;
+	struct v4l2_mbus_framefmt format = { 0 };
 	struct vsp_media_pad *mpad = &input->input_pads;
 	struct vsp_scaler *scaler = input->use_scaler;
 	struct vsp_surface_state *vs = input->input_surface_states;
