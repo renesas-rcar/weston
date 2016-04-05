@@ -319,8 +319,8 @@ drm_fb_create_dumb(struct drm_backend *b, unsigned width, unsigned height)
 	if (fb->map == MAP_FAILED)
 		goto err_add_fb;
 
-	if (ec->use_v4l2) {
-		ret = drmPrimeHandleToFD(ec->drm.fd, fb->handle, DRM_CLOEXEC,
+	if (b->use_v4l2) {
+		ret = drmPrimeHandleToFD(b->drm.fd, fb->handle, DRM_CLOEXEC,
 					 &fb->dmafd);
 		if (ret)
 			goto err_export_handle;
@@ -618,7 +618,7 @@ drm_output_render(struct drm_output *output, pixman_region32_t *damage)
 
 	if (b->use_pixman)
 		drm_output_render_pixman(output, damage);
-	else if (c->use_v4l2)
+	else if (b->use_v4l2)
 		drm_output_render_v4l2(output, damage);
 	else
 		drm_output_render_gl(output, damage);
@@ -1369,7 +1369,7 @@ drm_output_destroy(struct weston_output *output_base)
 
 	if (b->use_pixman) {
 		drm_output_fini_pixman(output);
-	} else if (c->use_v4l2) {
+	} else if (b->use_v4l2) {
 		drm_output_fini_v4l2(output);
 	} else {
 		gl_renderer->output_destroy(output_base);
@@ -1425,7 +1425,7 @@ drm_output_init_egl(struct drm_output *output, struct drm_backend *b);
 static int
 drm_output_init_pixman(struct drm_output *output, struct drm_backend *b);
 static int
-drm_output_init_v4l2(struct drm_output *output, struct drm_compositor *c);
+drm_output_init_v4l2(struct drm_output *output, struct drm_backend *b);
 
 static int
 drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mode)
@@ -1474,9 +1474,9 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode\n");
 			return -1;
 		}
-	} else if (ec->use_v4l2) {
+	} else if (b->use_v4l2) {
 		drm_output_fini_v4l2(output);
-		if (drm_output_init_v4l2(output, ec) < 0) {
+		if (drm_output_init_v4l2(output, b) < 0) {
 			weston_log("failed to init output v4l2 state with "
 				   "new mode\n");
 			return -1;
@@ -1657,14 +1657,14 @@ init_pixman(struct drm_backend *b)
 }
 
 static int
-init_v4l2(struct drm_compositor *ec)
+init_v4l2(struct drm_backend *b)
 {
 	v4l2_renderer = weston_load_module("v4l2-renderer.so",
 					   "v4l2_renderer_interface");
 	if (!v4l2_renderer)
 		return -1;
 
-	return v4l2_renderer->init(&ec->base, ec->drm.fd, ec->drm.filename);
+	return v4l2_renderer->init(b->compositor, b->drm.fd, b->drm.filename);
 }
 
 /**
@@ -1991,7 +1991,7 @@ drm_output_fini_pixman(struct drm_output *output)
 }
 
 static int
-drm_output_init_v4l2(struct drm_output *output, struct drm_compositor *c)
+drm_output_init_v4l2(struct drm_output *output, struct drm_backend *b)
 {
 	int w = output->base.current_mode->width;
 	int h = output->base.current_mode->height;
@@ -1999,7 +1999,7 @@ drm_output_init_v4l2(struct drm_output *output, struct drm_compositor *c)
 	struct v4l2_bo_state bo_state[ARRAY_LENGTH(output->dumb)];
 
 	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
-		output->dumb[i] = drm_fb_create_dumb(c, w, h);
+		output->dumb[i] = drm_fb_create_dumb(b, w, h);
 		if (!output->dumb[i])
 			goto err;
 		bo_state[i].dmafd = output->dumb[i]->dmafd;
@@ -2500,8 +2500,8 @@ create_output_for_connector(struct drm_backend *b,
 			weston_log("Failed to init output pixman state\n");
 			goto err_output;
 		}
-	} else if (ec->use_v4l2) {
-		if (drm_output_init_v4l2(output, ec) < 0) {
+	} else if (b->use_v4l2) {
+		if (drm_output_init_v4l2(output, b) < 0) {
 			weston_log("Failed to init output v4l2 state\n");
 			goto err_output;
 		}
@@ -3211,7 +3211,7 @@ drm_backend_create(struct weston_compositor *compositor,
 		goto err_base;
 
 	b->use_pixman = param->use_pixman;
-	ec->use_v4l2 = param->use_v4l2;
+	b->use_v4l2 = param->use_v4l2;
 
 	/* Check if we run drm-backend using weston-launch */
 	compositor->launcher = weston_launcher_connect(compositor, param->tty,
@@ -3248,8 +3248,8 @@ drm_backend_create(struct weston_compositor *compositor,
 			weston_log("failed to initialize pixman renderer\n");
 			goto err_udev_dev;
 		}
-	} else if (ec->use_v4l2) {
-		if (init_v4l2(ec) < 0) {
+	} else if (b->use_v4l2) {
+		if (init_v4l2(b) < 0) {
 			weston_log("failed to initialize v4l2 renderer\n");
 			goto err_udev_dev;
 		}

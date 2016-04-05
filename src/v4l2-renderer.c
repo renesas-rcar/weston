@@ -48,6 +48,7 @@
 
 #include <wayland-kms.h>
 #include <wayland-kms-server-protocol.h>
+#include "shared/helpers.h"
 
 #include "media-ctl/mediactl.h"
 #include "media-ctl/v4l2subdev.h"
@@ -990,7 +991,7 @@ debug_media_ctl(void *ignore, char *fmt, ...)
 }
 
 static void
-debug_binding(struct weston_seat *seat, uint32_t time, uint32_t key,
+debug_binding(struct weston_keyboard *keyboard, uint32_t time, uint32_t key,
 	      void *data)
 {
 	struct weston_compositor *ec = data;
