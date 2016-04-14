@@ -150,6 +150,9 @@ struct drm_fb {
 
 	/* Used by dumb fbs */
 	void *map;
+
+	/* Used by dmabuf */
+	struct linux_dmabuf_buffer *dmabuf;
 };
 
 struct drm_edid {
@@ -340,6 +343,84 @@ drm_fb_destroy_dumb(struct drm_fb *fb)
 	free(fb);
 }
 
+static inline void close_drm_handle(int fd, uint32_t handle)
+{
+	struct drm_gem_close gem_close = {.handle = handle};
+	int ret;
+
+	ret = drmIoctl(fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
+	if (ret)
+		weston_log("DRM_IOCTL_GEM_CLOSE failed.(%s)\n",
+			   strerror(errno));
+}
+
+static struct drm_fb *
+drm_fb_create_dmabuf(struct linux_dmabuf_buffer *dmabuf,
+		     struct drm_backend *backend, uint32_t format)
+{
+	struct drm_fb *fb;
+	uint32_t width, height, fb_id, handles[4] = {0};
+	int i, ret;
+
+	if (!format)
+		return NULL;
+
+	width = dmabuf->attributes.width;
+	height = dmabuf->attributes.height;
+	if (backend->min_width > width || width > backend->max_width ||
+	    backend->min_height > height || height > backend->max_height) {
+		weston_log("dmabuf geometry out of bounds\n");
+		return NULL;
+	}
+
+	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+		ret = drmPrimeFDToHandle(backend->drm.fd,
+					 dmabuf->attributes.fd[i],
+					 &handles[i]);
+		if (ret) {
+			weston_log("drmPrimeFDToHandle() failed. %s\n",
+				   strerror(errno));
+			goto failed;
+		}
+	}
+
+	fb = zalloc(sizeof *fb);
+	if (!fb)
+		goto failed;
+
+	ret = drmModeAddFB2(backend->drm.fd, width, height,
+			    format, handles, dmabuf->attributes.stride,
+			    dmabuf->attributes.offset, &fb_id, 0);
+	if (ret) {
+		weston_log("drmModeAddFB2 failed. %s\n", strerror(errno));
+		free(fb);
+		goto failed;
+	}
+
+	fb->fb_id = fb_id;
+	fb->stride = dmabuf->attributes.stride[0];
+	fb->fd = backend->drm.fd;
+	fb->dmabuf = dmabuf;
+
+	return fb;
+
+failed:
+	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+		if (!handles[i])
+			continue;
+		close_drm_handle(backend->drm.fd, handles[i]);
+	}
+	return NULL;
+}
+
+static void drm_fb_destroy_dmabuf(struct drm_fb *fb)
+{
+	if (fb->fb_id)
+		drmModeRmFB(fb->fd, fb->fb_id);
+	weston_buffer_reference(&fb->buffer_ref, NULL);
+	free(fb);
+}
+
 static struct drm_fb *
 drm_fb_get_from_bo(struct gbm_bo *bo,
 		   struct drm_backend *backend, uint32_t format)
@@ -426,6 +507,8 @@ drm_output_release_fb(struct drm_output *output, struct drm_fb *fb)
 	if (fb->map &&
             (fb != output->dumb[0] && fb != output->dumb[1])) {
 		drm_fb_destroy_dumb(fb);
+	} else if (fb->dmabuf) {
+		drm_fb_destroy_dmabuf(fb);
 	} else if (fb->bo) {
 		if (fb->is_client_buffer)
 			gbm_bo_destroy(fb->bo);
@@ -437,12 +520,9 @@ drm_output_release_fb(struct drm_output *output, struct drm_fb *fb)
 
 static uint32_t
 drm_output_check_scanout_format(struct drm_output *output,
-				struct weston_surface *es, struct gbm_bo *bo)
+				struct weston_surface *es, uint32_t format)
 {
-	uint32_t format;
 	pixman_region32_t r;
-
-	format = gbm_bo_get_format(bo);
 
 	if (format == GBM_FORMAT_ARGB8888) {
 		/* We can scanout an ARGB buffer if the surface's
@@ -473,12 +553,13 @@ drm_output_prepare_scanout_view(struct drm_output *output,
 		(struct drm_backend *)output->base.compositor->backend;
 	struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
 	struct weston_buffer_viewport *viewport = &ev->surface->buffer_viewport;
-	struct gbm_bo *bo;
+	struct linux_dmabuf_buffer *dmabuf;
+	struct gbm_bo *bo = NULL;
 	uint32_t format;
 
 	if (ev->geometry.x != output->base.x ||
 	    ev->geometry.y != output->base.y ||
-	    buffer == NULL || b->gbm == NULL ||
+	    buffer == NULL ||
 	    buffer->width != output->base.current_mode->width ||
 	    buffer->height != output->base.current_mode->height ||
 	    output->base.transform != viewport->buffer.transform ||
@@ -488,22 +569,29 @@ drm_output_prepare_scanout_view(struct drm_output *output,
 	if (ev->geometry.scissor_enabled)
 		return NULL;
 
-	bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
-			   buffer->resource, GBM_BO_USE_SCANOUT);
+	if ((dmabuf = linux_dmabuf_buffer_get(buffer->resource))) {
+		if (((format = drm_output_check_scanout_format(
+				output, ev->surface,
+				dmabuf->attributes.format)) == 0) ||
+		    (!(output->next = drm_fb_create_dmabuf(
+				dmabuf, b, format))))
+			return NULL;
+	} else if (b->gbm) {
+		bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
+				   buffer->resource, GBM_BO_USE_SCANOUT);
 
-	/* Unable to use the buffer for scanout */
-	if (!bo)
-		return NULL;
+		/* Unable to use the buffer for scanout */
+		if (!bo)
+			return NULL;
 
-	format = drm_output_check_scanout_format(output, ev->surface, bo);
-	if (format == 0) {
-		gbm_bo_destroy(bo);
-		return NULL;
-	}
-
-	output->next = drm_fb_get_from_bo(bo, b, format);
-	if (!output->next) {
-		gbm_bo_destroy(bo);
+		if (((format = drm_output_check_scanout_format(
+			      output, ev->surface,
+			      gbm_bo_get_format(bo))) == 0) ||
+		    (!(output->next = drm_fb_get_from_bo(bo, b, format)))) {
+			gbm_bo_destroy(bo);
+			return NULL;
+		}
+	} else {
 		return NULL;
 	}
 
