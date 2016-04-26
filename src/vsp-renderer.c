@@ -673,33 +673,6 @@ vsp_dequeue_buffer(int fd, int capture)
 	return 0;
 }
 
-static inline unsigned int
-vsp_plane_height(int plane, int height, unsigned int format)
-{
-	switch (plane) {
-	case 0:
-		return height;
-	case 1:
-		switch (format) {
-		case V4L2_PIX_FMT_NV12M:
-		case V4L2_PIX_FMT_NV21M:
-		case V4L2_PIX_FMT_YUV420M:
-			return height / 2;
-		case V4L2_PIX_FMT_NV16M:
-		case V4L2_PIX_FMT_NV61M:
-			return height;
-		}
-		break;
-	case 2:
-		switch (format) {
-		case V4L2_PIX_FMT_YUV420M:
-			return height / 2;
-		}
-		break;
-	}
-	return 0;
-}
-
 static int
 vsp_queue_buffer(int fd, int capture, struct vsp_surface_state *vs)
 {
@@ -716,9 +689,8 @@ vsp_queue_buffer(int fd, int capture, struct vsp_surface_state *vs)
 	memset(planes, 0, sizeof(planes));
 	for (i = 0; i < vs->base.num_planes; i++) {
 		buf.m.planes[i].m.fd = vs->base.planes[i].dmafd;
-		buf.m.planes[i].bytesused = vs->base.planes[i].stride *
-			vsp_plane_height(i, vs->base.height,
-					 vs->base.pixel_format);
+		buf.m.planes[i].length = vs->base.planes[i].length;
+		buf.m.planes[i].bytesused = vs->base.planes[i].bytesused;
 	}
 
 	if (ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
