@@ -960,11 +960,9 @@ page_flip_handler(int fd, unsigned int frame,
 
 static uint32_t
 drm_output_check_sprite_format(struct drm_sprite *s,
-			       struct weston_view *ev, struct gbm_bo *bo)
+			       struct weston_view *ev, uint32_t format)
 {
-	uint32_t i, format;
-
-	format = gbm_bo_get_format(bo);
+	uint32_t i;
 
 	if (format == GBM_FORMAT_ARGB8888) {
 		pixman_region32_t r;
@@ -1005,14 +1003,11 @@ drm_output_prepare_overlay_view(struct drm_output *output,
 	struct drm_sprite *s;
 	struct linux_dmabuf_buffer *dmabuf;
 	int found = 0;
-	struct gbm_bo *bo;
+	struct gbm_bo *bo = NULL;
 	pixman_region32_t dest_rect, src_rect;
 	pixman_box32_t *box, tbox;
 	uint32_t format;
 	wl_fixed_t sx1, sy1, sx2, sy2;
-
-	if (b->gbm == NULL)
-		return NULL;
 
 	if (viewport->buffer.transform != output->base.transform)
 		return NULL;
@@ -1053,15 +1048,9 @@ drm_output_prepare_overlay_view(struct drm_output *output,
 	if (!found)
 		return NULL;
 
-	if ((dmabuf = linux_dmabuf_buffer_get(buffer_resource))) {
+	if ((dmabuf = linux_dmabuf_buffer_get(buffer_resource)) &&
+	    b->no_addfb2 && b->gbm) {
 #ifdef HAVE_GBM_FD_IMPORT
-		/* XXX: TODO:
-		 *
-		 * Use AddFB2 directly, do not go via GBM.
-		 * Add support for multiplanar formats.
-		 * Both require refactoring in the DRM-backend to
-		 * support a mix of gbm_bos and drmfbs.
-		 */
 		struct gbm_import_fd_data gbm_dmabuf = {
 			.fd     = dmabuf->attributes.fd[0],
 			.width  = dmabuf->attributes.width,
@@ -1078,22 +1067,24 @@ drm_output_prepare_overlay_view(struct drm_output *output,
 #else
 		return NULL;
 #endif
-	} else {
+	} else if (b->gbm) {
 		bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
 				   buffer_resource, GBM_BO_USE_SCANOUT);
 	}
-	if (!bo)
-		return NULL;
 
-	format = drm_output_check_sprite_format(s, ev, bo);
-	if (format == 0) {
-		gbm_bo_destroy(bo);
-		return NULL;
-	}
-
-	s->next = drm_fb_get_from_bo(bo, b, format);
-	if (!s->next) {
-		gbm_bo_destroy(bo);
+	if (bo) {
+		if (((format = drm_output_check_sprite_format(
+			      s, ev, gbm_bo_get_format(bo))) == 0) ||
+		    (!(s->next = drm_fb_get_from_bo(bo, b, format)))) {
+			gbm_bo_destroy(bo);
+			return NULL;
+		}
+	} else if (dmabuf) {
+		if (((format = drm_output_check_sprite_format(
+			      s, ev, dmabuf->attributes.format)) == 0) ||
+		    (!(s->next = drm_fb_create_dmabuf(dmabuf, b, format))))
+			return NULL;
+	} else {
 		return NULL;
 	}
 
