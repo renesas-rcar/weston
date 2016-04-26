@@ -40,6 +40,8 @@ struct v4l2_renderer_output {
 struct v4l2_renderer_plane {
 	int dmafd;
 	unsigned int stride;
+	unsigned int length;
+	unsigned int bytesused;
 };
 
 struct v4l2_surface_state {

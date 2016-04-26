@@ -658,6 +658,8 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	vs->num_planes = 1;
 	vs->planes[0].stride = stride;
 	vs->planes[0].dmafd = -1;
+	vs->planes[0].length = vs->planes[0].bytesused
+		= stride * buffer->height;
 	vs->bpp = bpp;
 
 	if (device_interface->attach_buffer(vs) == -1)
@@ -712,6 +714,33 @@ kms_buffer_state_handle_buffer_destroy(struct wl_listener *listener, void *data)
 			  kms_buffer_destroy_listener);
 	vs->planes[0].dmafd = 0;
 	vs->kms_buffer_destroy_listener.notify = NULL;
+}
+
+static inline unsigned int
+v4l2_renderer_plane_height(int plane, int height, unsigned int format)
+{
+	switch (plane) {
+	case 0:
+		return height;
+	case 1:
+		switch (format) {
+		case V4L2_PIX_FMT_NV12M:
+		case V4L2_PIX_FMT_NV21M:
+		case V4L2_PIX_FMT_YUV420M:
+			return height / 2;
+		case V4L2_PIX_FMT_NV16M:
+		case V4L2_PIX_FMT_NV61M:
+			return height;
+		}
+		break;
+	case 2:
+		switch (format) {
+		case V4L2_PIX_FMT_YUV420M:
+			return height / 2;
+		}
+		break;
+	}
+	return 0;
 }
 
 static int
@@ -819,6 +848,10 @@ v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer 
 	for (i = 0; i < kbuf->num_planes; i++) {
 		vs->planes[i].stride = kbuf->planes[i].stride;
 		vs->planes[i].dmafd = kbuf->planes[i].fd;
+		vs->planes[i].length = vs->planes[i].bytesused
+			= vs->planes[i].stride *
+				v4l2_renderer_plane_height(i, vs->height,
+							   vs->pixel_format);
 	}
 
 	if (device_interface->attach_buffer(vs) == -1)
