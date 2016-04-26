@@ -1072,7 +1072,8 @@ v4l2_get_cname(const char *bus_info)
 		device_name = strdup(bus_info);
 
 	p = strchr(device_name, '.');
-	*p = '\0';
+	if (p)
+		*p = '\0';
 
 	return device_name;
 }
@@ -1082,7 +1083,7 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 {
 	struct v4l2_renderer *renderer;
 	char *device;
-	const char *device_name = NULL;
+	char *device_name = NULL;
 	const struct media_device_info *info;
 	struct weston_config_section *section;
 
@@ -1134,7 +1135,13 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 			    (info->driver_version >>  8) & 0xff,
 			    (info->driver_version)       & 0xff);
 
-	device_name = v4l2_get_cname(info->bus_info);
+	/* Get device module to use */
+	section = weston_config_get_section(ec->config,
+					    "v4l2-renderer", NULL, NULL);
+	weston_config_section_get_string(section, "device-module",
+					 &device_name, NULL);
+	if (!device_name)
+		device_name = v4l2_get_cname(info->bus_info);
 	v4l2_load_device_module(device_name);
 	if (!device_interface)
 		goto error;
