@@ -45,9 +45,12 @@
 
 #include <xf86drm.h>
 #include <libkms/libkms.h>
+#include <drm_fourcc.h>
 
 #include <wayland-kms.h>
 #include <wayland-kms-server-protocol.h>
+#include "linux-dmabuf.h"
+#include "linux-dmabuf-server-protocol.h"
 #include "shared/helpers.h"
 
 #include "media-ctl/mediactl.h"
@@ -706,14 +709,15 @@ error:
 }
 
 static void
-kms_buffer_state_handle_buffer_destroy(struct wl_listener *listener, void *data)
+dmabuf_buffer_state_handle_buffer_destroy(struct wl_listener *listener,
+					void *data)
 {
 	struct v4l2_surface_state *vs;
 
 	vs = container_of(listener, struct v4l2_surface_state,
-			  kms_buffer_destroy_listener);
+			  dmabuf_buffer_destroy_listener);
 	vs->planes[0].dmafd = 0;
-	vs->kms_buffer_destroy_listener.notify = NULL;
+	vs->dmabuf_buffer_destroy_listener.notify = NULL;
 }
 
 static inline unsigned int
@@ -742,17 +746,125 @@ v4l2_renderer_plane_height(int plane, int height, unsigned int format)
 	}
 	return 0;
 }
-
 static int
-v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer *buffer)
+attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer,
+		struct linux_dmabuf_buffer *dmabuf)
 {
 	unsigned int pixel_format;
-	struct wl_kms_buffer *kbuf;
 	int bpp, i;
 
-	buffer->legacy_buffer = (struct wl_buffer *)buffer->resource;
+	switch (dmabuf->format) {
+	case DRM_FORMAT_XRGB8888:
+		pixel_format = V4L2_PIX_FMT_XBGR32;
+		bpp = 4;
+		break;
 
-	kbuf = wayland_kms_buffer_get(buffer->resource);
+	case DRM_FORMAT_ARGB8888:
+		pixel_format = V4L2_PIX_FMT_ABGR32;
+		bpp = 4;
+		break;
+
+	case DRM_FORMAT_XBGR8888:
+		pixel_format = V4L2_PIX_FMT_XRGB32;
+		bpp = 4;
+		break;
+
+	case DRM_FORMAT_ABGR8888:
+		pixel_format = V4L2_PIX_FMT_ARGB32;
+		bpp = 4;
+		break;
+
+	case DRM_FORMAT_RGB888:
+		pixel_format = V4L2_PIX_FMT_RGB24;
+		bpp = 3;
+		break;
+
+	case DRM_FORMAT_BGR888:
+		pixel_format = V4L2_PIX_FMT_BGR24;
+		bpp = 3;
+		break;
+
+	case DRM_FORMAT_RGB565:
+		pixel_format = V4L2_PIX_FMT_RGB565;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_RGB332:
+		pixel_format = V4L2_PIX_FMT_RGB332;
+		bpp = 1;
+		break;
+
+	case DRM_FORMAT_YUYV:
+		pixel_format = V4L2_PIX_FMT_YUYV;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_YVYU:
+		pixel_format = V4L2_PIX_FMT_YVYU;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_UYVY:
+		pixel_format = V4L2_PIX_FMT_UYVY;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_NV12:
+		pixel_format = V4L2_PIX_FMT_NV12M;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_NV16:
+		pixel_format = V4L2_PIX_FMT_NV16M;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_NV21:
+		pixel_format = V4L2_PIX_FMT_NV21M;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_NV61:
+		pixel_format = V4L2_PIX_FMT_NV61M;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_YUV420:
+		pixel_format = V4L2_PIX_FMT_YUV420M;
+		bpp = 2;
+		break;
+
+	default:
+		weston_log("Unsupported DMABUF buffer format\n");
+		return -1;
+	}
+
+	vs->width = buffer->width = dmabuf->width;
+	vs->height = buffer->height = dmabuf->height;
+	vs->pixel_format = pixel_format;
+	vs->bpp = bpp;
+	vs->num_planes = dmabuf->n_planes;
+	for (i = 0; i < dmabuf->n_planes; i++) {
+		vs->planes[i].stride = dmabuf->stride[i];
+		vs->planes[i].dmafd = dmabuf->dmabuf_fd[i];
+		vs->planes[i].length = vs->planes[i].bytesused
+			= vs->planes[i].stride *
+				v4l2_renderer_plane_height(i, vs->height,
+							   vs->pixel_format);
+	}
+
+	DBG("%s: %dx%d buffer attached (dmabuf=%d, stride=%d).\n", __func__,
+		dmabuf->width, dmabuf->height, dmabuf->fd, dmabuf->stride);
+
+	return 0;
+}
+
+static int
+attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer,
+		struct wl_kms_buffer *kbuf)
+{
+	unsigned int pixel_format;
+	int bpp, i;
 
 	switch (kbuf->format) {
 	case WL_KMS_FORMAT_XRGB8888:
@@ -854,19 +966,41 @@ v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer 
 							   vs->pixel_format);
 	}
 
+	DBG("%s: %dx%d buffer attached (dmabuf=%d, stride=%d).\n", __func__, kbuf->width, kbuf->height, kbuf->fd, kbuf->stride);
+
+	return 0;
+}
+
+static int
+v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer *buffer)
+{
+	struct linux_dmabuf_buffer *dmabuf;
+	struct wl_kms_buffer *kbuf;
+
+	buffer->legacy_buffer = (struct wl_buffer *)buffer->resource;
+
+	if ((dmabuf = linux_dmabuf_buffer_get(buffer->resource))) {
+		if (attach_linux_dmabuf_buffer(vs, buffer, dmabuf) < 0)
+			return -1;
+	} else if ((kbuf = wayland_kms_buffer_get(buffer->resource))) {
+		if (attach_wl_kms_buffer(vs, buffer, kbuf) < 0)
+			return -1;
+	} else {
+		return -1;
+	}
+
 	if (device_interface->attach_buffer(vs) == -1)
 		return -1;
 
-	if (vs->kms_buffer_destroy_listener.notify) {
-		wl_list_remove(&vs->kms_buffer_destroy_listener.link);
-		vs->kms_buffer_destroy_listener.notify = NULL;
+	if (vs->dmabuf_buffer_destroy_listener.notify) {
+		wl_list_remove(&vs->dmabuf_buffer_destroy_listener.link);
+		vs->dmabuf_buffer_destroy_listener.notify = NULL;
 	}
-	vs->kms_buffer_destroy_listener.notify
-		= kms_buffer_state_handle_buffer_destroy;
-	wl_resource_add_destroy_listener(kbuf->resource,
-					 &vs->kms_buffer_destroy_listener);
 
-	DBG("%s: %dx%d buffer attached (dmabuf=%d, stride=%d).\n", __func__, kbuf->width, kbuf->height, kbuf->fd, kbuf->stride);
+	vs->dmabuf_buffer_destroy_listener.notify
+		= dmabuf_buffer_state_handle_buffer_destroy;
+	wl_resource_add_destroy_listener(buffer->resource,
+				&vs->dmabuf_buffer_destroy_listener);
 
 	return 0;
 }
@@ -924,9 +1058,9 @@ v4l2_renderer_surface_state_destroy(struct v4l2_surface_state *vs)
 
 	vs->surface->renderer_state = NULL;
 
-	if (vs->kms_buffer_destroy_listener.notify) {
-		wl_list_remove(&vs->kms_buffer_destroy_listener.link);
-		vs->kms_buffer_destroy_listener.notify = NULL;
+	if (vs->dmabuf_buffer_destroy_listener.notify) {
+		wl_list_remove(&vs->dmabuf_buffer_destroy_listener.link);
+		vs->dmabuf_buffer_destroy_listener.notify = NULL;
 	}
 
 	// TODO: Release any resources associated to the surface here.
@@ -1078,6 +1212,22 @@ v4l2_get_cname(const char *bus_info)
 	return device_name;
 }
 
+static bool
+v4l2_renderer_import_dmabuf(struct weston_compositor *ec,
+                           struct linux_dmabuf_buffer *dmabuf)
+{
+	uint32_t mask = ZLINUX_BUFFER_PARAMS_FLAGS_Y_INVERT |
+			ZLINUX_BUFFER_PARAMS_FLAGS_INTERLACED |
+			ZLINUX_BUFFER_PARAMS_FLAGS_BOTTOM_FIRST;
+
+	/* Always regard as downward y-coordinates and
+	   interlaced images are not supported. */
+	if ((dmabuf->flags & mask) == ZLINUX_BUFFER_PARAMS_FLAGS_Y_INVERT)
+		return true;
+
+	return false;
+}
+
 static int
 v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 {
@@ -1164,6 +1314,7 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 	renderer->base.attach = v4l2_renderer_attach;
 	renderer->base.surface_set_color = v4l2_renderer_surface_set_color;
 	renderer->base.destroy = v4l2_renderer_destroy;
+	renderer->base.import_dmabuf = v4l2_renderer_import_dmabuf;
 
 	ec->renderer = &renderer->base;
 	ec->capabilities |= device_interface->get_capabilities();
