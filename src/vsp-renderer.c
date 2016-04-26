@@ -699,6 +699,16 @@ vsp_queue_buffer(int fd, int capture, struct vsp_surface_state *vs)
 		return -1;
 	}
 
+	if (capture) {
+		for (i = 0; i < vs->base.num_planes; i++) {
+			vs->base.planes[i].length = buf.m.planes[i].length;
+			/* XXX:
+			   Set length value to bytesused because bytesused is
+			   returned 0 from kernel driver. Need to set returned
+			   bytesused value. */
+			vs->base.planes[i].bytesused = buf.m.planes[i].length;
+		}
+	}
 	return 0;
 }
 
