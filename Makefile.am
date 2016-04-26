@@ -246,6 +246,20 @@ v4l2_vsp1_device_la_SOURCES =			\
 	src/media-ctl/mediactl.h		\
 	src/media-ctl/tools.h			\
 	src/media-ctl/v4l2subdev.h
+
+module_LTLIBRARIES += v4l2-vsp2-device.la
+v4l2_vsp2_device_la_LDFLAGS = -module -avoid-version
+v4l2_vsp2_device_la_LIBADD = $(COMPOSITOR_LIBS) -L"./src/media-ctl" -lmediactl-v4l2
+v4l2_vsp2_device_la_CFLAGS =				\
+	$(COMPOSITOR_CFLAGS)			\
+	$(GCC_CFLAGS)
+v4l2_vsp2_device_la_SOURCES =			\
+	src/vsp2-renderer.c			\
+	src/v4l2-device.h			\
+	src/media-ctl/mediactl-priv.h		\
+	src/media-ctl/mediactl.h		\
+	src/media-ctl/tools.h			\
+	src/media-ctl/v4l2subdev.h
 endif
 
 if ENABLE_X11_COMPOSITOR
