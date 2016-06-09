@@ -70,8 +70,6 @@ struct vsp_renderer_output {
 };
 
 #define VSP_INPUT_MAX	4
-#define VSP_SCALER_MAX	0
-#define VSP_SCALER_MIN_PIXELS	4	// UDS can't take pixels smaller than this
 
 const char *vsp_input_links[] = {
 	"'%s rpf.0':1 -> '%s bru':0",
@@ -130,14 +128,6 @@ const char *vsp_output_fmt[] = {
 	"'%s wpf.0':1"
 };
 
-const char *vsp_scaler_links[] = {
-	"'%s rpf.%d':1 -> '%s uds.%d':0",
-	"'%s uds.%d':1 -> '%s bru':%d"
-};
-
-const char *vsp_scaler_infmt = "'%s uds.%d':0";
-const char *vsp_scaler_outfmt = "'%s uds.%d':1";
-
 struct vsp_media_pad {
 	struct media_pad	*infmt_pad;
 	struct media_pad	*outfmt_pad;
@@ -147,20 +137,6 @@ struct vsp_media_pad {
 	struct media_link	*link;
 
 	int			fd;
-};
-
-struct vsp_scaler_template {
-	struct media_link *link0;	// rpf -> uds
-	struct media_link *link1;	// uds -> bru
-};
-
-struct vsp_scaler {
-	int input;
-
-	struct media_pad	*infmt_pad;
-	struct media_pad	*outfmt_pad;
-
-	struct vsp_scaler_template	templates[VSP_INPUT_MAX];
 };
 
 struct vsp_output {
@@ -176,7 +152,6 @@ typedef enum {
 struct vsp_input {
 	struct vsp_media_pad input_pads;
 	struct vsp_surface_state *input_surface_states;
-	struct vsp_scaler *use_scaler;
 	struct v4l2_rect src;
 	struct v4l2_rect dst;
 	int opaque;
@@ -193,10 +168,6 @@ struct vsp_device {
 	int input_count;
 	int input_max;
 	struct vsp_input inputs[VSP_INPUT_MAX];
-
-	int scaler_count;
-	int scaler_max;
-	struct vsp_scaler scalers[VSP_SCALER_MAX];
 
 	struct vsp_output output;
 };
@@ -271,7 +242,7 @@ vsp2_init(struct media_device *media, struct weston_config *config)
 	const struct media_device_info *info;
 	char buf[128], *p, *endp;
 	const char *device_name, *devname;
-	int i, j;
+	int i;
 	struct weston_config_section *section;
 
 	/* Get device name */
@@ -294,7 +265,6 @@ vsp2_init(struct media_device *media, struct weston_config *config)
 	vsp->base.media = media;
 	vsp->base.device_name = device_name;
 	vsp->state = VSP_STATE_IDLE;
-	vsp->scaler_max = VSP_SCALER_MAX;
 
 	/* check configuration */
 	section = weston_config_get_section(config,
@@ -395,39 +365,6 @@ vsp2_init(struct media_device *media, struct weston_config *config)
 				goto error;
 			}
 		}
-	}
-
-	/* Initialize scaler */
-	weston_log("Setting up scaler(s).\n");
-	for (i = 0; i < vsp->scaler_max; i++) {
-		/* create link templates */
-		for (j = 0; j < vsp->input_max; j++) {
-			snprintf(buf, sizeof(buf), vsp_scaler_links[0], device_name, j, device_name, i);
-			weston_log("parsing link: '%s'\n", buf);
-			vsp->scalers[i].templates[j].link0 = media_parse_link(media, buf, &endp);
-
-			snprintf(buf, sizeof(buf), vsp_scaler_links[1], device_name, i, device_name, j);
-			weston_log("parsing link: '%s'\n", buf);
-			vsp->scalers[i].templates[j].link1 = media_parse_link(media, buf, &endp);
-		}
-
-		/* get pads to setup UDS */
-		snprintf(buf, sizeof(buf), vsp_scaler_infmt, device_name, i);
-		weston_log("get a scaler input pad: '%s'\n", buf);
-		if (!(vsp->scalers[i].infmt_pad = media_parse_pad(media, buf, NULL))) {
-			weston_log("parse pad failed.\n");
-			goto error;
-		}
-
-		snprintf(buf, sizeof(buf), vsp_scaler_outfmt, device_name, i);
-		weston_log("get a scaler output pad: '%s'\n", buf);
-		if (!(vsp->scalers[i].outfmt_pad = media_parse_pad(media, buf, NULL))) {
-			weston_log("parse pad failed.\n");
-			goto error;
-		}
-
-		/* initialize input */
-		vsp->scalers[i].input = -1;
 	}
 
 	/* Initialize output */
@@ -781,32 +718,14 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, int enab
 {
 	struct v4l2_mbus_framefmt format = { 0 };
 	struct vsp_media_pad *mpad = &input->input_pads;
-	struct vsp_scaler *scaler = input->use_scaler;
 	struct vsp_surface_state *vs = input->input_surface_states;
 	struct v4l2_rect *src = &input->src;
 	struct v4l2_rect *dst = &input->dst;
 
 	// enable link associated with this pad
-	if (!scaler) {
-		if (media_setup_link(vsp->base.media, mpad->link->source, mpad->link->sink, enable)) {
-			weston_log("enabling media link setup failed.\n");
-			return -1;
-		}
-	} else {
-		struct vsp_scaler_template *temp = &scaler->templates[scaler->input];
-
-		if (enable)
-			media_setup_link(vsp->base.media, mpad->link->source, mpad->link->sink, 0);
-
-		if (media_setup_link(vsp->base.media, temp->link0->source, temp->link0->sink, enable)) {
-			weston_log("enabling scaler link0 setup failed.\n");
-			return -1;
-		}
-
-		if (media_setup_link(vsp->base.media, temp->link1->source, temp->link1->sink, enable)) {
-			weston_log("enabling scaler link1 setup failed.\n");
-			return -1;
-		}
+	if (media_setup_link(vsp->base.media, mpad->link->source, mpad->link->sink, enable)) {
+		weston_log("enabling media link setup failed.\n");
+		return -1;
 	}
 
 	if (!enable)
@@ -844,25 +763,6 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, int enab
 				   V4L2_SUBDEV_FORMAT_ACTIVE)) {
 		weston_log("set output format via subdev failed.\n");
 		return -1;
-	}
-
-	// if we enabled the scaler, we should set resize parameters.
-	if (scaler) {
-		// a sink of UDS should be the same as a source of RPF.
-		if (v4l2_subdev_set_format(scaler->infmt_pad->entity, &format, scaler->infmt_pad->index,
-					   V4L2_SUBDEV_FORMAT_ACTIVE)) {
-			weston_log("set input format of UDS via subdev failed.\n");
-			return -1;
-		}
-
-		// a source of UDS should be the same as a sink of BRU.
-		format.width  = dst->width;
-		format.height = dst->height;
-		if (v4l2_subdev_set_format(scaler->outfmt_pad->entity, &format, scaler->outfmt_pad->index,
-					   V4L2_SUBDEV_FORMAT_ACTIVE)) {
-			weston_log("set output format of UDS via subdev failed.\n");
-			return -1;
-		}
 	}
 
 	// so does the BRU input
@@ -956,18 +856,6 @@ vsp2_comp_flush(struct vsp_device *vsp)
 		}
 	}
 
-	// disable UDS if used
-	if (vsp->scaler_count) {
-		for (i = 0; i < vsp->input_count; i++) {
-			struct vsp_input *input = &vsp->inputs[i];
-			if (input->use_scaler) {
-				vsp2_comp_setup_inputs(vsp, input, 0);
-				input->use_scaler->input = -1;
-				input->use_scaler = NULL;
-			}
-		}
-		vsp->scaler_count = 0;
-	}
 	vsp->input_count = 0;
 	return 0;
 
@@ -997,7 +885,6 @@ static int
 vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v4l2_rect *src, struct v4l2_rect *dst,
 		 int opaque)
 {
-	int should_use_scaler = 0;
 	struct vsp_input *input;
 
 	if (src->width < 1 || src->height < 1) {
@@ -1008,15 +895,6 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 	if (src->width > 8190 || src->height > 8190) {
 		weston_log("ignoring the size exceeding the limit (8190x8190) < (%dx%d)\n", src->width, src->height);
 		return 0;
-	}
-
-	if (dst->width != src->width || dst->height != src->height) {
-		if (src->width < VSP_SCALER_MIN_PIXELS || src->height < VSP_SCALER_MIN_PIXELS) {
-			weston_log("ignoring the size the scaler can't handle (input size=%dx%d).\n",
-				   src->width, src->height);
-			return 0;
-		}
-		//should_use_scaler = 1;
 	}
 
 	if (src->left < 0) {
@@ -1059,22 +937,6 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 	}
 
 	input = &vsp->inputs[vsp->input_count];
-
-	/* check if we need to use a scaler */
-	if (should_use_scaler) {
-		DBG("We need to use a scaler. (%dx%d)->(%dx%d)\n",
-		    src->width, src->height, dst->width, dst->height);
-
-		// if all scalers are oocupied, flush and then retry.
-		if (vsp->scaler_count == vsp->scaler_max) {
-			vsp2_comp_flush(vsp);
-			return vsp2_do_draw_view(vsp, vs, src, dst, opaque);
-		}
-
-		vsp->scalers[vsp->scaler_count].input = vsp->input_count;
-		input->use_scaler = &vsp->scalers[vsp->scaler_count];
-		vsp->scaler_count++;
-	}
 
 	// get an available input pad
 	input->input_surface_states = vs;
