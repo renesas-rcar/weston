@@ -535,6 +535,14 @@ vsp2_init(struct media_device *media, struct weston_config *config)
 	weston_config_section_get_int(section, "max_inputs", &vsp->input_max, VSP_INPUT_MAX);
 #ifdef V4L2_GL_FALLBACK
 	weston_config_section_get_int(section, "max_views_to_compose", &max_views_to_compose, -1);
+	weston_config_section_get_string(section, "scaler", &p, "off");
+	if (!strcmp(p, "off"))
+	    scaler_type = SCALER_TYPE_OFF;
+	else if (!strcmp(p, "vsp"))
+	    scaler_type = SCALER_TYPE_VSP;
+	else if (!strcmp(p, "gl-fallback"))
+	    scaler_type = SCALER_TYPE_GL;
+	free(p);
 #endif
 
 	if (vsp->input_max < 2)
@@ -1498,7 +1506,22 @@ vsp2_set_output_buffer(struct v4l2_renderer_output *out, struct v4l2_bo_state *b
 static int
 vsp2_can_compose(struct v4l2_view *view_list, int count)
 {
-	return !(max_views_to_compose > 0 && max_views_to_compose < count);
+	int i;
+
+	if (max_views_to_compose > 0 && max_views_to_compose < count)
+		return 0;
+
+	if (scaler_type != SCALER_TYPE_GL)
+		return 1;
+
+	for (i = 0; i < count; i++) {
+		struct weston_view *ev = view_list[i].view;
+		float *d = ev->transform.matrix.d;
+		if (d[0] != 1.0 || d[5] != 1.0 || d[10] != 1.0)
+			return 0;
+	}
+
+	return 1;
 }
 #endif
 
