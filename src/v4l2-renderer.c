@@ -416,6 +416,21 @@ v4l2_gl_repaint(struct weston_output *output,
 		}
 	}
 }
+
+static bool
+v4l2_gl_import_dmabuf(struct weston_compositor *ec,
+		      struct linux_dmabuf_buffer *dmabuf)
+{
+	struct v4l2_renderer *renderer = get_renderer(ec);
+	bool ret;
+
+	ec->renderer = renderer->gl_renderer;
+	ret = renderer->gl_renderer->import_dmabuf(ec, dmabuf);
+	ec->renderer = &renderer->base;
+
+	return ret;
+}
+
 #endif
 
 static int
@@ -1626,6 +1641,12 @@ v4l2_renderer_import_dmabuf(struct weston_compositor *ec,
 			ZWP_LINUX_BUFFER_PARAMS_V1_FLAGS_INTERLACED |
 			ZWP_LINUX_BUFFER_PARAMS_V1_FLAGS_BOTTOM_FIRST;
 
+#ifdef V4L2_GL_FALLBACK
+	struct v4l2_renderer *renderer = get_renderer(ec);
+	if (renderer->gl_fallback) {
+		return v4l2_gl_import_dmabuf(ec, dmabuf);
+	}
+#endif
 	/* Always regard as downward y-coordinates and
 	   interlaced images are not supported. */
 	if ((dmabuf->attributes.flags & mask) ==
