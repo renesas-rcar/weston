@@ -32,9 +32,17 @@
  */
 #define V4L2_GL_FALLBACK
 
+#ifdef V4L2_GL_FALLBACK
+#include <libkms/libkms.h>
+#endif
+
 struct v4l2_renderer_device {
 	struct media_device *media;
 	const char *device_name;
+#ifdef V4L2_GL_FALLBACK
+	struct kms_driver *kms;
+	int drm_fd;
+#endif
 };
 
 struct v4l2_renderer_output {

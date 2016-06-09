@@ -1749,6 +1749,9 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 	renderer->base.import_dmabuf = v4l2_renderer_import_dmabuf;
 
 #ifdef V4L2_GL_FALLBACK
+	renderer->device->kms = renderer->kms;
+	renderer->device->drm_fd = drm_fd;
+
 	if (renderer->gl_fallback) {
 		/* we now initialize gl-renderer for fallback */
 		renderer->gbm = v4l2_create_gbm_device(drm_fd);
