@@ -1124,16 +1124,27 @@ v4l2_renderer_plane_height(int plane, int height, unsigned int format)
 		case V4L2_PIX_FMT_NV12M:
 		case V4L2_PIX_FMT_NV21M:
 		case V4L2_PIX_FMT_YUV420M:
+		case V4L2_PIX_FMT_YVU420M:
 			return height / 2;
 		case V4L2_PIX_FMT_NV16M:
 		case V4L2_PIX_FMT_NV61M:
+		case V4L2_PIX_FMT_YUV422M:
+		case V4L2_PIX_FMT_YVU422M:
+		case V4L2_PIX_FMT_YUV444M:
+		case V4L2_PIX_FMT_YVU444M:
 			return height;
 		}
 		break;
 	case 2:
 		switch (format) {
 		case V4L2_PIX_FMT_YUV420M:
+		case V4L2_PIX_FMT_YVU420M:
 			return height / 2;
+		case V4L2_PIX_FMT_YUV422M:
+		case V4L2_PIX_FMT_YVU422M:
+		case V4L2_PIX_FMT_YUV444M:
+		case V4L2_PIX_FMT_YVU444M:
+			return height;
 		}
 		break;
 	}
@@ -1225,6 +1236,31 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 	case DRM_FORMAT_YUV420:
 		pixel_format = V4L2_PIX_FMT_YUV420M;
 		bpp = 2;
+		break;
+
+	case DRM_FORMAT_YVU420:
+		pixel_format = V4L2_PIX_FMT_YVU420M;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_YUV422:
+		pixel_format = V4L2_PIX_FMT_YUV422M;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_YVU422:
+		pixel_format = V4L2_PIX_FMT_YVU422M;
+		bpp = 2;
+		break;
+
+	case DRM_FORMAT_YUV444:
+		pixel_format = V4L2_PIX_FMT_YUV444M;
+		bpp = 3;
+		break;
+
+	case DRM_FORMAT_YVU444:
+		pixel_format = V4L2_PIX_FMT_YVU444M;
+		bpp = 3;
 		break;
 
 	default:
