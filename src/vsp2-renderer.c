@@ -75,7 +75,8 @@ struct vsp_renderer_output {
 	struct vsp_surface_state surface_state;
 };
 
-#define VSP_INPUT_MAX	4
+#define VSP_INPUT_MAX		5
+#define VSP_INPUT_DEFAULT	4
 #define VSP_SCALER_MAX	1
 #define VSP_SCALER_MIN_PIXELS	4	// UDS can't take pixels smaller than this
 
@@ -83,7 +84,8 @@ const char *vsp_input_links[] = {
 	"'%s rpf.0':1 -> '%s bru':0",
 	"'%s rpf.1':1 -> '%s bru':1",
 	"'%s rpf.2':1 -> '%s bru':2",
-	"'%s rpf.3':1 -> '%s bru':3"
+	"'%s rpf.3':1 -> '%s bru':3",
+	"'%s rpf.4':1 -> '%s bru':4"
 };
 
 const char *vsp_output_links[] = {
@@ -95,7 +97,8 @@ const char *vsp_inputs[] = {
 	"%s rpf.0 input",
 	"%s rpf.1 input",
 	"%s rpf.2 input",
-	"%s rpf.3 input"
+	"%s rpf.3 input",
+	"%s rpf.4 input"
 };
 
 const char *vsp_output = {
@@ -106,28 +109,32 @@ const char *vsp_input_infmt[] = {
 	"'%s rpf.0':0",
 	"'%s rpf.1':0",
 	"'%s rpf.2':0",
-	"'%s rpf.3':0"
+	"'%s rpf.3':0",
+	"'%s rpf.4':0"
 };
 
 const char *vsp_input_outfmt[] = {
 	"'%s rpf.0':1",
 	"'%s rpf.1':1",
 	"'%s rpf.2':1",
-	"'%s rpf.3':1"
+	"'%s rpf.3':1",
+	"'%s rpf.4':1"
 };
 
 const char *vsp_input_composer[] = {
 	"'%s bru':0",
 	"'%s bru':1",
 	"'%s bru':2",
-	"'%s bru':3"
+	"'%s bru':3",
+	"'%s bru':4"
 };
 
 const char *vsp_input_subdev[] = {
 	"%s rpf.0",
 	"%s rpf.1",
 	"%s rpf.2",
-	"%s rpf.3"
+	"%s rpf.3",
+	"%s rpf.4"
 };
 
 const char *vsp_output_fmt[] = {
@@ -532,7 +539,7 @@ vsp2_init(struct media_device *media, struct weston_config *config)
 	/* check configuration */
 	section = weston_config_get_section(config,
 					    "vsp-renderer", NULL, NULL);
-	weston_config_section_get_int(section, "max_inputs", &vsp->input_max, VSP_INPUT_MAX);
+	weston_config_section_get_int(section, "max_inputs", &vsp->input_max, VSP_INPUT_DEFAULT);
 #ifdef V4L2_GL_FALLBACK
 	weston_config_section_get_int(section, "max_views_to_compose", &max_views_to_compose, -1);
 	weston_config_section_get_string(section, "scaler", &p, "off");
