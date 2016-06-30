@@ -447,6 +447,11 @@ vsp2_attach_buffer(struct v4l2_surface_state *surface_state)
 	case V4L2_PIX_FMT_NV16M:
 	case V4L2_PIX_FMT_NV61M:
 	case V4L2_PIX_FMT_YUV420M:
+	case V4L2_PIX_FMT_YVU420M:
+	case V4L2_PIX_FMT_YUV422M:
+	case V4L2_PIX_FMT_YVU422M:
+	case V4L2_PIX_FMT_YUV444M:
+	case V4L2_PIX_FMT_YVU444M:
 		code = V4L2_MBUS_FMT_AYUV8_1X32;
 		break;
 
