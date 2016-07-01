@@ -42,6 +42,7 @@ struct v4l2_renderer_device {
 #ifdef V4L2_GL_FALLBACK
 	struct kms_driver *kms;
 	int drm_fd;
+	bool disable_gl_fallback;
 #endif
 };
 
