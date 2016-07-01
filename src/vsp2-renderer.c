@@ -543,6 +543,9 @@ vsp2_init(struct media_device *media, struct weston_config *config)
 	else if (!strcmp(p, "gl-fallback"))
 	    scaler_type = SCALER_TYPE_GL;
 	free(p);
+
+	if (max_views_to_compose <= 0 && scaler_type != SCALER_TYPE_GL)
+		vsp->base.disable_gl_fallback = true;
 #endif
 
 	if (vsp->input_max < 2)
