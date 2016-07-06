@@ -1541,7 +1541,10 @@ vsp2_can_compose(struct v4l2_view *view_list, int count)
 	for (i = 0; i < count; i++) {
 		struct weston_view *ev = view_list[i].view;
 		float *d = ev->transform.matrix.d;
-		if (d[0] != 1.0 || d[5] != 1.0 || d[10] != 1.0)
+		struct weston_surface *surf = ev->surface;
+		float *vd = surf->buffer_to_surface_matrix.d;
+		if (d[0] != 1.0 || d[5] != 1.0 || d[10] != 1.0 ||
+		    vd[0] != 1.0 || vd[5] != 1.0 || vd[10] != 1.0)
 			return 0;
 	}
 
