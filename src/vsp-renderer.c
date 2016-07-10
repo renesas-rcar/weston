@@ -42,10 +42,10 @@
 #include "v4l2-renderer.h"
 #include "v4l2-renderer-device.h"
 
-#include "media-ctl/mediactl.h"
-#include "media-ctl/mediactl-priv.h"
-#include "media-ctl/v4l2subdev.h"
-#include "media-ctl/tools.h"
+#include <libmediactl-v4l2/mediactl.h>
+#include <libmediactl-v4l2/mediactl-priv.h>
+#include <libmediactl-v4l2/v4l2subdev.h>
+#include <libmediactl-v4l2/tools.h>
 
 #include <linux/input.h>
 

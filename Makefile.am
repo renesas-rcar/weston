@@ -216,50 +216,40 @@ gl_renderer_la_SOURCES =			\
 endif
 
 if ENABLE_V4L2
-SUBDIRS = src/media-ctl
 module_LTLIBRARIES += v4l2-renderer.la
 v4l2_renderer_la_LDFLAGS = -module -avoid-version
-v4l2_renderer_la_LIBADD = $(COMPOSITOR_LIBS) $(V4L2_RENDERER_LIBS) -L"./src/media-ctl" -lmediactl-v4l2
+v4l2_renderer_la_LIBADD = $(COMPOSITOR_LIBS) $(V4L2_RENDERER_LIBS) $(LIBMEDIACTL_V4L2_LIBS)
 v4l2_renderer_la_CFLAGS =				\
 	$(COMPOSITOR_CFLAGS)			\
 	$(V4L2_RENDERER_CFLAGS) \
+	$(LIBMEDIACTL_V4L2_CFLAGS)		\
 	$(GCC_CFLAGS)
 v4l2_renderer_la_SOURCES =			\
 	src/v4l2-renderer.c			\
 	src/v4l2-renderer.h			\
-	src/v4l2-device.h			\
-	src/media-ctl/mediactl-priv.h		\
-	src/media-ctl/mediactl.h		\
-	src/media-ctl/tools.h			\
-	src/media-ctl/v4l2subdev.h
+	src/v4l2-device.h
 
 module_LTLIBRARIES += v4l2-vsp1-device.la
 v4l2_vsp1_device_la_LDFLAGS = -module -avoid-version
-v4l2_vsp1_device_la_LIBADD = $(COMPOSITOR_LIBS) -L"./src/media-ctl" -lmediactl-v4l2
+v4l2_vsp1_device_la_LIBADD = $(COMPOSITOR_LIBS) $(LIBMEDIACTL_V4L2_LIBS)
 v4l2_vsp1_device_la_CFLAGS =				\
 	$(COMPOSITOR_CFLAGS)			\
+	$(LIBMEDIACTL_V4L2_CFLAGS)		\
 	$(GCC_CFLAGS)
 v4l2_vsp1_device_la_SOURCES =			\
 	src/vsp-renderer.c			\
-	src/v4l2-device.h			\
-	src/media-ctl/mediactl-priv.h		\
-	src/media-ctl/mediactl.h		\
-	src/media-ctl/tools.h			\
-	src/media-ctl/v4l2subdev.h
+	src/v4l2-device.h
 
 module_LTLIBRARIES += v4l2-vsp2-device.la
 v4l2_vsp2_device_la_LDFLAGS = -module -avoid-version
-v4l2_vsp2_device_la_LIBADD = $(COMPOSITOR_LIBS) -L"./src/media-ctl" -lmediactl-v4l2
+v4l2_vsp2_device_la_LIBADD = $(COMPOSITOR_LIBS) $(LIBMEDIACTL_V4L2_LIBS)
 v4l2_vsp2_device_la_CFLAGS =				\
 	$(COMPOSITOR_CFLAGS)			\
+	$(LIBMEDIACTL_V4L2_CFLAGS)		\
 	$(GCC_CFLAGS)
 v4l2_vsp2_device_la_SOURCES =			\
 	src/vsp2-renderer.c			\
-	src/v4l2-device.h			\
-	src/media-ctl/mediactl-priv.h		\
-	src/media-ctl/mediactl.h		\
-	src/media-ctl/tools.h			\
-	src/media-ctl/v4l2subdev.h
+	src/v4l2-device.h
 endif
 
 if ENABLE_X11_COMPOSITOR
