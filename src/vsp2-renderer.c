@@ -368,15 +368,13 @@ vsp2_scaler_init(struct weston_config_section *section)
 		device_name = info->bus_info;
 
 	/*
-	 * XXX: This needs to be fixed. Renesas VSP driver has differenet
-	 * naming rule from upstream. This should be fixed to make the code
-	 * works for upstream drivers as well.
-	 *
 	 * TODO: We also need to refactor the code, so that we don't have
 	 * duplication of codes. Especially, these media controller related
 	 * code.
+	 *
+	 * The same issue with the model name as in vsp2_init() applies here.
 	 */
-	if (strncmp(device_name, "soc:vspi", 8)) {
+	if (strncmp(info->model, "VSP2", 4)) {
 		weston_log("The device is not VSPI.\n");
 		goto error;
 	}
