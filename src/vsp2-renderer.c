@@ -255,7 +255,13 @@ vsp2_init(struct media_device *media, struct weston_config *config)
 	else
 		device_name = info->bus_info;
 
-	if (strncmp(device_name, "soc:vsp", 7)) {
+	/*
+	 * XXX: The model name that V4L2 media controller passes should be fixed in the future,
+	 * so that we can distinguish the capability of the VSP device. R-Car Gen3 has VSPB,
+	 * VSPI, and VSPD as 'VSP2', but they all have different capabilities. Right now,
+	 * the model name is always 'VSP2'.
+	 */
+	if (strncmp(info->model, "VSP2", 4)) {
 		weston_log("The device is not VSP.");
 		goto error;
 	}
