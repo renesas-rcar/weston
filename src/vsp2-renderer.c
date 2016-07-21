@@ -455,6 +455,7 @@ vsp2_attach_buffer(struct v4l2_surface_state *surface_state)
 	case V4L2_PIX_FMT_YUYV:
 	case V4L2_PIX_FMT_YVYU:
 	case V4L2_PIX_FMT_UYVY:
+	case V4L2_PIX_FMT_VYUY:
 	case V4L2_PIX_FMT_NV12M:
 	case V4L2_PIX_FMT_NV21M:
 	case V4L2_PIX_FMT_NV16M:
