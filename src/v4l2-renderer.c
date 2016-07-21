@@ -817,6 +817,11 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 		bpp = 2;
 		break;
 
+	case DRM_FORMAT_VYUY:
+		pixel_format = V4L2_PIX_FMT_VYUY;
+		bpp = 2;
+		break;
+
 	case DRM_FORMAT_NV12:
 		pixel_format = V4L2_PIX_FMT_NV12M;
 		bpp = 2;
