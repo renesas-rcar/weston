@@ -595,6 +595,7 @@ vsp2_create_output(struct v4l2_renderer_device *dev, int width, int height)
 	outdev->surface_state.base.src_rect.height = height;
 	outdev->surface_state.base.dst_rect.width = width;
 	outdev->surface_state.base.dst_rect.height = height;
+	outdev->surface_state.base.alpha = 1;
 
 	/* we use this later to let output to be input for composition */
 	fmt = &outdev->surface_state.fmt;
