@@ -381,7 +381,7 @@ static struct drm_fb *
 drm_fb_create_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		     struct drm_backend *backend, uint32_t format)
 {
-	struct drm_fb *fb;
+	struct drm_fb *fb = NULL;
 	uint32_t width, height, fb_id, handles[4] = {0};
 	int i, ret;
 
@@ -402,13 +402,13 @@ drm_fb_create_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		if (ret) {
 			weston_log("drmPrimeFDToHandle() failed. %s\n",
 				   strerror(errno));
-			goto failed;
+			goto done;
 		}
 	}
 
 	fb = zalloc(sizeof *fb);
 	if (!fb)
-		goto failed;
+		goto done;
 
 	ret = drmModeAddFB2(backend->drm.fd, width, height,
 			    format, handles, dmabuf->stride, dmabuf->offset,
@@ -416,7 +416,8 @@ drm_fb_create_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 	if (ret) {
 		weston_log("drmModeAddFB2 failed. %s\n", strerror(errno));
 		free(fb);
-		goto failed;
+		fb = NULL;
+		goto done;
 	}
 
 	fb->fb_id = fb_id;
@@ -424,15 +425,13 @@ drm_fb_create_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 	fb->fd = backend->drm.fd;
 	fb->dmabuf = dmabuf;
 
-	return fb;
-
-failed:
+done:
 	for (i = 0; i < dmabuf->n_planes; i++) {
 		if (!handles[i])
 			continue;
 		close_drm_handle(backend->drm.fd, handles[i]);
 	}
-	return NULL;
+	return fb;
 }
 
 static void drm_fb_destroy_dmabuf(struct drm_fb *fb)
