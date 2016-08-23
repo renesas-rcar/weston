@@ -646,9 +646,10 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 
 	if (vs->width == buffer->width &&
 	    vs->height == buffer->height &&
-	    vs->planes[0].stride == stride && vs->bpp == bpp) {
-	    // no need to recreate buffer
-	    return 0;
+	    vs->planes[0].stride == stride && vs->bpp == bpp &&
+	    vs->pixel_format == pixel_format) {
+		// no need to recreate buffer
+		return 0;
 	}
 
 	// release if there's allocated buffer
