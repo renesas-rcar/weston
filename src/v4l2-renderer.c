@@ -781,12 +781,14 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 		bpp = 4;
 		break;
 
-	case DRM_FORMAT_XBGR8888:
+	case DRM_FORMAT_BGRX8888:
+	case DRM_FORMAT_XBGR8888: /* for backward compatibility */
 		pixel_format = V4L2_PIX_FMT_XRGB32;
 		bpp = 4;
 		break;
 
-	case DRM_FORMAT_ABGR8888:
+	case DRM_FORMAT_BGRA8888:
+	case DRM_FORMAT_ABGR8888: /* for backward compatibility */
 		pixel_format = V4L2_PIX_FMT_ARGB32;
 		bpp = 4;
 		break;
