@@ -480,7 +480,7 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 
 	src = bo->map + x * 4 + y * bo->stride;
 	dst = pixels;
-	for (v = y; v < height; v++) {
+	for (v = 0; v < height; v++) {
 		memcpy(dst, src, len);
 		src += bo->stride;
 		dst += len;
