@@ -456,9 +456,9 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 
 #ifdef V4L2_GL_FALLBACK
 	if (output->compositor->capabilities & WESTON_CAP_CAPTURE_YFLIP) {
-		src = bo->map + x * 4 + y * bo->stride;
+		src = bo->map + x * 4 + (output->height - (y + height)) * bo->stride;
 		dst = pixels + len * (height - 1);
-		for (v = y; v < height; v++) {
+		for (v = 0; v < height; v++) {
 			memcpy(dst, src, len);
 			src += bo->stride;
 			dst -= len;
