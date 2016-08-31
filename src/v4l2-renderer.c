@@ -582,6 +582,7 @@ v4l2_release_kms_bo(struct v4l2_surface_state *vs)
 
 		kms_bo_destroy(&vs->bo);
 		vs->addr = NULL;
+		vs->bo = NULL;
 	}
 }
 
@@ -644,7 +645,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	buffer->height = wl_shm_buffer_get_height(shm_buffer);
 	stride = wl_shm_buffer_get_stride(shm_buffer);
 
-	if (vs->width == buffer->width &&
+	if (vs->bo && vs->width == buffer->width &&
 	    vs->height == buffer->height &&
 	    vs->planes[0].stride == stride && vs->bpp == bpp &&
 	    vs->pixel_format == pixel_format) {
@@ -1020,6 +1021,8 @@ v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer 
 	struct wl_kms_buffer *kbuf;
 
 	buffer->legacy_buffer = (struct wl_buffer *)buffer->resource;
+
+	v4l2_release_kms_bo(vs);
 
 	if ((dmabuf = linux_dmabuf_buffer_get(buffer->resource))) {
 		if (attach_linux_dmabuf_buffer(vs, buffer, dmabuf) < 0)
