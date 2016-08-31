@@ -1051,6 +1051,10 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 
 	// release if there's allocated buffer
 	v4l2_release_kms_bo(vs);
+	if (vs->dmabuf_buffer_destroy_listener.notify) {
+		wl_list_remove(&vs->dmabuf_buffer_destroy_listener.link);
+		vs->dmabuf_buffer_destroy_listener.notify = NULL;
+	}
 
 	// create a reference to the shm_buffer.
 	vs->width = buffer->width;
