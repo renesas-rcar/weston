@@ -450,6 +450,7 @@ draw_view(struct weston_view *ev, struct weston_output *output)
 		pixman_region32_init_rect(&output_region, 0, 0, output->width, output->height);
 
 		pixman_region32_intersect(&opaque_dst_region, &opaque_dst_region, &output_region);
+		pixman_region32_subtract(&opaque_dst_region, &opaque_dst_region, &ev->clip);
 		transform_region(&transform, &opaque_dst_region, &opaque_src_region);
 	}
 
