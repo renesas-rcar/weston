@@ -350,6 +350,9 @@ drm_fb_destroy_dumb(struct drm_fb *fb)
 
 	munmap(fb->map, fb->size);
 
+	if (fb->dmafd)
+		close(fb->dmafd);
+
 	memset(&destroy_arg, 0, sizeof(destroy_arg));
 	destroy_arg.handle = fb->handle;
 	drmIoctl(fb->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_arg);
