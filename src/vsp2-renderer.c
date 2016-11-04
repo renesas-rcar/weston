@@ -1002,10 +1002,18 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 	if (!enable)
 		return 0;
 
+	// dump the old setting
+	if (vsp2_request_output_buffer(rpf->devnode.fd, 0) < 0)
+		return -1;
+
+	// set input format
+	if (vsp2_set_format(rpf->devnode.fd, &vs->fmt, input->opaque))
+		return -1;
+
 	// set size and formart for rpf.n:0, the input format
 	subdev_fmt.pad = 0;
-	subdev_fmt.format.width = vs->base.width;
-	subdev_fmt.format.height = vs->base.height;
+	subdev_fmt.format.width = vs->fmt.fmt.pix_mp.width;
+	subdev_fmt.format.height = vs->fmt.fmt.pix_mp.height;
 	subdev_fmt.format.code = vs->mbus_code;
 
 	if (ioctl(rpf->subdev.fd, VIDIOC_SUBDEV_S_FMT, &subdev_fmt) < 0) {
@@ -1058,14 +1066,6 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 			   dst->width, dst->height, dst->left, dst->top);
 		return -1;
 	}
-
-	// dump the old setting
-	if (vsp2_request_output_buffer(rpf->devnode.fd, 0) < 0)
-		return -1;
-
-	// set input format
-	if (vsp2_set_format(rpf->devnode.fd, &vs->fmt, input->opaque))
-		return -1;
 
 	// request a buffer
 	if (vsp2_request_output_buffer(rpf->devnode.fd, 1) < 0)
