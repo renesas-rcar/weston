@@ -1312,7 +1312,7 @@ static int
 vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v4l2_rect *src, struct v4l2_rect *dst,
 		 int opaque)
 {
-	if (src->width < 1 || src->height < 1) {
+	if (src->width < 2 || src->height < 2) {
 		DBG("ignoring the size of zeros < (%dx%d)\n", src->width, src->height);
 		return 0;
 	}
