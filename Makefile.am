@@ -251,11 +251,10 @@ endif
 if ENABLE_V4L2
 module_LTLIBRARIES += v4l2-renderer.la
 v4l2_renderer_la_LDFLAGS = -module -avoid-version
-v4l2_renderer_la_LIBADD = $(COMPOSITOR_LIBS) $(V4L2_RENDERER_LIBS) $(LIBMEDIACTL_V4L2_LIBS)
+v4l2_renderer_la_LIBADD = $(COMPOSITOR_LIBS) $(V4L2_RENDERER_LIBS)
 v4l2_renderer_la_CFLAGS =			\
 	$(COMPOSITOR_CFLAGS)			\
 	$(V4L2_RENDERER_CFLAGS)			\
-	$(LIBMEDIACTL_V4L2_CFLAGS)		\
 	$(GCC_CFLAGS)
 v4l2_renderer_la_SOURCES =			\
 	src/v4l2-renderer.c			\
@@ -264,11 +263,10 @@ v4l2_renderer_la_SOURCES =			\
 
 module_LTLIBRARIES += v4l2-vsp2-device.la
 v4l2_vsp2_device_la_LDFLAGS = -module -avoid-version
-v4l2_vsp2_device_la_LIBADD = $(COMPOSITOR_LIBS) $(V4L2_RENDERER_LIBS) $(LIBMEDIACTL_V4L2_LIBS)
+v4l2_vsp2_device_la_LIBADD = $(COMPOSITOR_LIBS) $(V4L2_RENDERER_LIBS)
 v4l2_vsp2_device_la_CFLAGS =			\
 	$(COMPOSITOR_CFLAGS)			\
-	$(V4L2_RENDERER_CFLAGS)			\
-	$(LIBMEDIACTL_V4L2_CFLAGS)		\
+	$(LIBDRM_CFLAGS)			\
 	$(GCC_CFLAGS)
 v4l2_vsp2_device_la_SOURCES =			\
 	src/vsp2-renderer.c			\

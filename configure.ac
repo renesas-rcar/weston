@@ -99,7 +99,6 @@ AM_CONDITIONAL(ENABLE_V4L2, test x$enable_v4l2 = xyes)
 if test x$enable_v4l2 = xyes; then
 	AC_DEFINE([ENABLE_V4L2], [1], [Build Weston with V4L2 support])
 	PKG_CHECK_MODULES(V4L2_RENDERER, [libdrm libkms wayland-kms gbm])
-	PKG_CHECK_MODULES(LIBMEDIACTL_V4L2, [libmediactl-v4l2])
 fi
 
 AC_ARG_ENABLE(xkbcommon,

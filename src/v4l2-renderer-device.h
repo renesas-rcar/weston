@@ -30,19 +30,23 @@
 
 #include "compositor.h"
 
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <linux/media.h>
+
 /*
  * Enable gl-fallback feature.
  */
-#define V4L2_GL_FALLBACK
+// #define V4L2_GL_FALLBACK_ENABLED
 
-#ifdef V4L2_GL_FALLBACK
+#ifdef V4L2_GL_FALLBACK_ENABLED
 #include <libkms/libkms.h>
 #endif
 
 struct v4l2_renderer_device {
-	struct media_device *media;
+	int media_fd;
 	const char *device_name;
-#ifdef V4L2_GL_FALLBACK
+#ifdef V4L2_GL_FALLBACK_ENABLED
 	struct kms_driver *kms;
 	int drm_fd;
 	bool disable_gl_fallback;
@@ -61,7 +65,7 @@ struct v4l2_renderer_plane {
 	unsigned int bytesused;
 };
 
-#ifdef V4L2_GL_FALLBACK
+#ifdef V4L2_GL_FALLBACK_ENABLED
 typedef enum {
 	V4L2_SURFACE_DEFAULT,
 	V4L2_SURFACE_GL_ATTACHED
@@ -108,7 +112,7 @@ struct v4l2_surface_state {
 	struct wl_listener renderer_destroy_listener;
 	struct wl_listener dmabuf_buffer_destroy_listener;
 
-#ifdef V4L2_GL_FALLBACK
+#ifdef V4L2_GL_FALLBACK_ENABLED
 	void *gl_renderer_state;
 
 	v4l2_surface_t surface_type;
@@ -123,7 +127,7 @@ struct v4l2_surface_state {
 };
 
 struct v4l2_device_interface {
-	struct v4l2_renderer_device *(*init)(struct media_device *media, struct weston_config *config);
+	struct v4l2_renderer_device *(*init)(int media_fd, struct media_device_info *info, struct weston_config *config);
 
 	struct v4l2_renderer_output *(*create_output)(struct v4l2_renderer_device *dev, int width, int height);
 	void (*set_output_buffer)(struct v4l2_renderer_output *out, struct v4l2_bo_state *bo);
@@ -134,8 +138,8 @@ struct v4l2_device_interface {
 	void (*begin_compose)(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *out);
 	void (*finish_compose)(struct v4l2_renderer_device *dev);
 	int (*draw_view)(struct v4l2_renderer_device *dev, struct v4l2_surface_state *vs);
-#ifdef V4L2_GL_FALLBACK
-	int (*can_compose)(struct v4l2_view *view_list, int count);
+#ifdef V4L2_GL_FALLBACK_ENABLED
+	int (*can_compose)(struct v4l2_renderer_device *dev, struct v4l2_view *view_list, int count);
 #endif
 
 	uint32_t (*get_capabilities)(void);
