@@ -1519,6 +1519,7 @@ v4l2_renderer_surface_state_destroy(struct v4l2_surface_state *vs)
 
 	// TODO: Release any resources associated to the surface here.
 
+	v4l2_release_kms_bo(vs);
 	weston_buffer_reference(&vs->buffer_ref, NULL);
 
 #ifdef V4L2_GL_FALLBACK_ENABLED
