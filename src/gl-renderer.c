@@ -2623,6 +2623,10 @@ gl_renderer_output_destroy(struct weston_output *output)
 	for (i = 0; i < 2; i++)
 		pixman_region32_fini(&go->buffer_damage[i]);
 
+	eglMakeCurrent(gr->egl_display,
+		      EGL_NO_SURFACE, EGL_NO_SURFACE,
+		      EGL_NO_CONTEXT);
+
 	eglDestroySurface(gr->egl_display, go->egl_surface);
 
 	free(go);
