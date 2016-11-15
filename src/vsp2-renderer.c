@@ -44,12 +44,6 @@
 
 #include <linux/videodev2.h>
 #include <linux/v4l2-subdev.h>
-
-/*
- * Enable scaling with VSPI UDS
- */
-// #define VSP2_SCALER_ENABLED
-
 #include "v4l2-renderer.h"
 #include "v4l2-renderer-device.h"
 

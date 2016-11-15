@@ -34,11 +34,6 @@
 #include <sys/ioctl.h>
 #include <linux/media.h>
 
-/*
- * Enable gl-fallback feature.
- */
-// #define V4L2_GL_FALLBACK_ENABLED
-
 #ifdef V4L2_GL_FALLBACK_ENABLED
 #include <libkms/libkms.h>
 #endif
