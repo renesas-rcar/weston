@@ -1779,10 +1779,11 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 	renderer->base.destroy = v4l2_renderer_destroy;
 	renderer->base.import_dmabuf = v4l2_renderer_import_dmabuf;
 
-#ifdef V4L2_GL_FALLBACK_ENABLED
+#if defined(V4L2_GL_FALLBACK_ENABLED) || defined(VSP2_SCALER_ENABLED)
 	renderer->device->kms = renderer->kms;
 	renderer->device->drm_fd = drm_fd;
 
+#  ifdef V4L2_GL_FALLBACK_ENABLED
 	if (renderer->device->disable_gl_fallback)
 		renderer->gl_fallback = 0;
 
@@ -1797,6 +1798,7 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 			}
 		}
 	}
+#  endif
 #endif
 
 	ec->renderer = &renderer->base;

@@ -46,10 +46,12 @@
 struct v4l2_renderer_device {
 	int media_fd;
 	const char *device_name;
-#ifdef V4L2_GL_FALLBACK_ENABLED
+#if defined(V4L2_GL_FALLBACK_ENABLED) || defined(VSP2_SCALER_ENABLED)
 	struct kms_driver *kms;
 	int drm_fd;
+#  ifdef V4L2_GL_FALLBACK_ENABLED
 	bool disable_gl_fallback;
+#  endif
 #endif
 };
 

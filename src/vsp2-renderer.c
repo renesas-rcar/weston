@@ -44,19 +44,20 @@
 
 #include <linux/videodev2.h>
 #include <linux/v4l2-subdev.h>
-#include "v4l2-renderer.h"
-#include "v4l2-renderer-device.h"
-
-#ifdef V4L2_GL_FALLBACK_ENABLED
-#include <unistd.h>
-#include <xf86drm.h>
-#include <libkms/libkms.h>
-#endif
 
 /*
  * Enable scaling with VSPI UDS
  */
 // #define VSP2_SCALER_ENABLED
+
+#include "v4l2-renderer.h"
+#include "v4l2-renderer-device.h"
+
+#if defined(V4L2_GL_FALLBACK_ENABLED) || defined(VSP2_SCALER_ENABLED)
+#include <unistd.h>
+#include <xf86drm.h>
+#include <libkms/libkms.h>
+#endif
 
 #if 0
 #define DBG(...) weston_log(__VA_ARGS__)
