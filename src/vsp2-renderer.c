@@ -147,12 +147,6 @@ static struct vsp2_media_entity vspi_entities[] = {
 	MEDIA_ENTITY(VSPI_WPF0, "wpf.0 output", "wpf.0", -1, -1)	// immutable
 };
 
-typedef enum {
-	SCALER_TYPE_OFF = 0,
-	SCALER_TYPE_VSP,
-	SCALER_TYPE_GL,
-} scaler_t;
-
 struct vsp_scaler_device {
 	int media_fd;
 
@@ -196,7 +190,7 @@ struct vsp_device {
 	struct v4l2_format current_wpf_fmt;
 
 #ifdef VSP2_SCALER_ENABLED
-	scaler_t scaler_type;
+	int scaler_enable;
 	int scaler_count;
 	int scaler_max;
 	struct vsp_scaler_device *scaler;
@@ -521,31 +515,15 @@ vsp2_init(int media_fd, struct media_device_info *info, struct weston_config *co
 	vsp2_check_capability(vsp->wpf->devnode.fd, vsp->wpf->devnode.entity.name);
 
 #ifdef VSP2_SCALER_ENABLED
-	{
-		char *p;
+	vsp->scaler_max = VSP_SCALER_MAX;
 
-		vsp->scaler_max = VSP_SCALER_MAX;
-		vsp->scaler_type = SCALER_TYPE_OFF;
+	weston_config_section_get_bool(section, "vsp-scaler", &vsp->scaler_enable, 0);
 
-		weston_config_section_get_string(section, "scaler", &p, "off");
+	DBG("vsp-scaler = '%s'\n", vsp->scaler_enable ? "true" : "false");
 
-		DBG("scaler setting = '%s'\n", p);
-
-		if (!strcmp(p, "vsp")) {
-			if ((vsp->scaler = vsp2_scaler_init(section)))
-				vsp->scaler_type = SCALER_TYPE_VSP;
-		}
-#  ifdef V4L2_GL_FALLBACK_ENABLED
-		else if (!strcmp(p, "gl-fallback")) {
-			vsp->scaler_type = SCALER_TYPE_GL;
-		}
-
-		/* If we need to scale with gl-renderer, we don't disable fallback */
-		if (vsp->max_views_to_compose <= 0 && vsp->scaler_type != SCALER_TYPE_GL)
-			vsp->base.disable_gl_fallback = true;
-#  endif
-
-		free(p);
+	if (vsp->scaler_enable) {
+		if (!(vsp->scaler = vsp2_scaler_init(section)))
+			vsp->scaler_enable = 0;
 	}
 #endif
 
@@ -804,14 +782,14 @@ vsp2_create_output(struct v4l2_renderer_device *dev, int width, int height)
 #ifdef VSP2_SCALER_ENABLED
 	struct vsp_device *vsp = (struct vsp_device*)dev;
 
-	if (vsp->scaler_type == SCALER_TYPE_VSP) {
+	if (vsp->scaler_enable) {
 		int ret = vsp2_scaler_create_buffer(vsp->scaler,
 						    vsp->base.drm_fd,
 						    vsp->base.kms,
 						    width, height);
 		if (ret) {
 			weston_log("Can't create buffer for scaling. Disabling VSP scaler.\n");
-			vsp->scaler_type = SCALER_TYPE_OFF;
+			vsp->scaler_enable = false;
 		}
 	}
 #endif
@@ -1300,7 +1278,7 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 #ifdef VSP2_SCALER_ENABLED
 	int should_use_scaler = 0;
 
-	if (vsp->scaler_type == SCALER_TYPE_VSP &&
+	if (vsp->scaler_enable &&
 	    (dst->width != src->width || dst->height != src->height)) {
 		if (src->width < VSP_SCALER_MIN_PIXELS || src->height < VSP_SCALER_MIN_PIXELS) {
 			weston_log("ignoring the size the scaler can't handle (input size=%dx%d).\n",
@@ -1423,16 +1401,18 @@ vsp2_can_compose(struct v4l2_renderer_device *dev, struct v4l2_view *view_list, 
 	if (vsp->max_views_to_compose > 0 && vsp->max_views_to_compose < count)
 		return 0;
 
-#ifdef VSP2_SCALER_ENABLED
-	if (vsp->scaler_type != SCALER_TYPE_GL)
-		return 1;
-#endif
-
 	for (i = 0; i < count; i++) {
 		struct weston_view *ev = view_list[i].view;
 		float *d = ev->transform.matrix.d;
 		struct weston_surface *surf = ev->surface;
 		float *vd = surf->buffer_to_surface_matrix.d;
+
+		if ((ev->transform.matrix.type | surf->buffer_to_surface_matrix.type) & WESTON_MATRIX_TRANSFORM_ROTATE)
+			return 0;
+#ifdef VSP2_SCALER_ENABLED
+		if (vsp->scaler_enable)
+			continue;
+#endif
 		if (d[0] != 1.0 || d[5] != 1.0 || d[10] != 1.0 ||
 		    vd[0] != 1.0 || vd[5] != 1.0 || vd[10] != 1.0)
 			return 0;

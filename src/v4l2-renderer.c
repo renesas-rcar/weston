@@ -1782,9 +1782,6 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 	renderer->device->drm_fd = drm_fd;
 
 #  ifdef V4L2_GL_FALLBACK_ENABLED
-	if (renderer->device->disable_gl_fallback)
-		renderer->gl_fallback = 0;
-
 	if (renderer->gl_fallback) {
 		/* we now initialize gl-renderer for fallback */
 		renderer->gbm = v4l2_create_gbm_device(drm_fd);
