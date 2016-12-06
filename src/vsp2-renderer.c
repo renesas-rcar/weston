@@ -207,25 +207,6 @@ struct vsp_device {
 #endif
 };
 
-static void
-video_debug_mediactl(void)
-{
-	FILE *p = popen("media-ctl -d /dev/media0 -p", "r");
-	char buf[BUFSIZ * 16];
-
-	if (!p)
-		return;
-
-	weston_log("====== output of media-ctl ======\n");
-	while(!feof(p)) {
-		fread(buf, sizeof(buf), 1, p);
-		weston_log_continue(buf);
-	}
-	weston_log_continue("\n================================\n");
-
-	pclose(p);
-}
-
 static int
 video_is_capture(__u32 cap)
 {
@@ -1132,7 +1113,6 @@ vsp2_comp_flush(struct vsp_device *vsp)
 	return 0;
 
 error:
-	video_debug_mediactl();
 	vsp->input_count = 0;
 	return -1;
 }
