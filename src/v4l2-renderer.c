@@ -1709,8 +1709,7 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 	renderer->wl_kms = wayland_kms_init(ec->wl_display, NULL, drm_fn, drm_fd);
 
 	/* Get V4L2 media controller device to use */
-	section = weston_config_get_section(ec->config,
-					    "media-ctl", NULL, NULL);
+	section = weston_config_get_section(ec->config, "v4l2-renderer", NULL, NULL);
 	weston_config_section_get_string(section, "device", &device, "/dev/media0");
 #ifdef V4L2_GL_FALLBACK_ENABLED
 	weston_config_section_get_bool(section, "gl-fallback", &renderer->gl_fallback, 0);
@@ -1749,8 +1748,6 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 			    (info.driver_version)       & 0xff);
 
 	/* Get device module to use */
-	section = weston_config_get_section(ec->config,
-					    "v4l2-renderer", NULL, NULL);
 	weston_config_section_get_string(section, "device-module",
 					 &device_name, NULL);
 	if (!device_name)
