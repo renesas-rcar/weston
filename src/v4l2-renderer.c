@@ -893,7 +893,8 @@ v4l2_renderer_repaint_output(struct weston_output *output,
 #endif
 
 	// render all views
-	repaint_surfaces(output, output_damage);
+	if (pixman_region32_not_empty(output_damage))
+		repaint_surfaces(output, output_damage);
 
 	// remember the damaged area
 	pixman_region32_copy(&output->previous_damage, output_damage);
