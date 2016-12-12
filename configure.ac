@@ -102,7 +102,7 @@ AC_ARG_ENABLE(vsp2_scaler, [  --enable-vsp2-scaler,],,
 AM_CONDITIONAL(ENABLE_V4L2, test x$enable_v4l2 = xyes)
 if test x$enable_v4l2 = xyes; then
 	AC_DEFINE([ENABLE_V4L2], [1], [Build Weston with V4L2 support])
-	PKG_CHECK_MODULES(V4L2_RENDERER, [libdrm libkms wayland-kms gbm])
+	PKG_CHECK_MODULES(V4L2_RENDERER, [libdrm libkms wayland-kms gbm >= 10.3.0])
 
 	if test x$enable_v4l2_gl_fallback = xyes; then
 		if test x$enable_egl = xyes; then

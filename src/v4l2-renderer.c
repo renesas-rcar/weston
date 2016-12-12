@@ -202,8 +202,7 @@ v4l2_init_gl_output(struct weston_output *output, struct v4l2_renderer *renderer
 						output->current_mode->height,
 						format,
 						GBM_BO_USE_SCANOUT |
-						GBM_BO_USE_RENDERING |
-						GBM_BO_CREATE_EMPTY);
+						GBM_BO_USE_RENDERING);
 
 	if (!state->gbm_surface) {
 		weston_log("%s: failed to create gbm surface\n", __func__);
@@ -213,7 +212,8 @@ v4l2_init_gl_output(struct weston_output *output, struct v4l2_renderer *renderer
 	for (i = 0; i < 2; i++) {
 		int n = i % state->bo_count;
 		gbm_kms_set_bo((struct gbm_kms_surface *)state->gbm_surface,
-			       n, state->bo[n].map, state->bo[n].stride);
+			       n, state->bo[n].map, state->bo[n].dmafd,
+			       state->bo[n].stride);
 	}
 
 	output->compositor->renderer = renderer->gl_renderer;
