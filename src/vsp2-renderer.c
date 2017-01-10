@@ -789,7 +789,7 @@ vsp2_create_output(struct v4l2_renderer_device *dev, int width, int height)
 						    width, height);
 		if (ret) {
 			weston_log("Can't create buffer for scaling. Disabling VSP scaler.\n");
-			vsp->scaler_enable = false;
+			vsp->scaler_enable = 0;
 		}
 	}
 #endif
