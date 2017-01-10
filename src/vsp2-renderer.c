@@ -1410,7 +1410,7 @@ vsp2_can_compose(struct v4l2_renderer_device *dev, struct v4l2_view *view_list, 
 		if ((ev->transform.matrix.type | surf->buffer_to_surface_matrix.type) & WESTON_MATRIX_TRANSFORM_ROTATE)
 			return 0;
 #ifdef VSP2_SCALER_ENABLED
-		if (vsp->scaler_enable)
+		if (vsp->scaler_enable && d[0] > 0 && d[5] > 0 && vd[0] > 0 && vd[5] > 0)
 			continue;
 #endif
 		if (d[0] != 1.0 || d[5] != 1.0 || d[10] != 1.0 ||
