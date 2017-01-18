@@ -1434,8 +1434,10 @@ v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer 
 		return -1;
 	}
 
-	if (device_interface->attach_buffer(vs) == -1)
+	if (device_interface->attach_buffer(vs) == -1) {
+		vs->planes[0].dmafd = 0;
 		return -1;
+	}
 
 	if (vs->dmabuf_buffer_destroy_listener.notify) {
 		wl_list_remove(&vs->dmabuf_buffer_destroy_listener.link);
