@@ -1413,7 +1413,8 @@ vsp2_can_compose(struct v4l2_renderer_device *dev, struct v4l2_view *view_list, 
 		if (vsp->scaler_enable && d[0] > 0 && d[5] > 0 && vd[0] > 0 && vd[5] > 0)
 			continue;
 #endif
-		if (d[0] != 1.0 || d[5] != 1.0 || d[10] != 1.0 ||
+		if (ev->output->zoom.active ||
+		    d[0] != 1.0 || d[5] != 1.0 || d[10] != 1.0 ||
 		    vd[0] != 1.0 || vd[5] != 1.0 || vd[10] != 1.0)
 			return 0;
 	}
