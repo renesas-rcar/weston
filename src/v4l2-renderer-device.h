@@ -137,4 +137,5 @@ struct v4l2_device_interface {
 #endif
 
 	uint32_t (*get_capabilities)(void);
+	bool (*check_format)(uint32_t color_format);
 };

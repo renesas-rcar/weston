@@ -1688,7 +1688,7 @@ v4l2_renderer_import_dmabuf(struct weston_compositor *ec,
 	   interlaced images are not supported. */
 	if ((dmabuf->attributes.flags & mask) ==
 			ZWP_LINUX_BUFFER_PARAMS_V1_FLAGS_Y_INVERT)
-		return true;
+		return device_interface->check_format(dmabuf->attributes.format);
 
 	return false;
 }

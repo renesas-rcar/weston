@@ -53,6 +53,8 @@
 #include <libkms/libkms.h>
 #endif
 
+#include <drm_fourcc.h>
+
 #if 0
 #define DBG(...) weston_log(__VA_ARGS__)
 #define DBGC(...) weston_log_continue(__VA_ARGS__)
@@ -199,6 +201,37 @@ struct vsp_device {
 #ifdef V4L2_GL_FALLBACK_ENABLED
 	int max_views_to_compose;
 #endif
+};
+
+#define ARRAY_SIZE(a)		(sizeof((a))/sizeof((a[0])))
+
+static uint32_t vsp2_support_formats[] = {
+	DRM_FORMAT_XRGB8888, /* V4L2_PIX_FMT_XBGR32 */
+	DRM_FORMAT_ARGB8888, /* V4L2_PIX_FMT_ABGR32 */
+	DRM_FORMAT_BGRX8888, /* V4L2_PIX_FMT_XRGB32 */
+	DRM_FORMAT_BGRA8888, /* V4L2_PIX_FMT_ARGB32 */
+	DRM_FORMAT_RGB888, /* V4L2_PIX_FMT_RGB24 */
+	DRM_FORMAT_BGR888, /* V4L2_PIX_FMT_BGR24 */
+	DRM_FORMAT_RGB565, /* V4L2_PIX_FMT_RGB565 */
+	DRM_FORMAT_RGB332, /* 4L2_PIX_FMT_RGB332 */
+	DRM_FORMAT_YUYV, /* V4L2_PIX_FMT_YUYV */
+	DRM_FORMAT_YVYU, /* V4L2_PIX_FMT_YVYU */
+	DRM_FORMAT_UYVY, /* V4L2_PIX_FMT_UYVY */
+	DRM_FORMAT_VYUY, /* V4L2_PIX_FMT_VYUY */
+	DRM_FORMAT_NV12, /* V4L2_PIX_FMT_NV12M */
+	DRM_FORMAT_NV16, /* V4L2_PIX_FMT_NV16M */
+	DRM_FORMAT_NV21, /* V4L2_PIX_FMT_NV21M */
+	DRM_FORMAT_NV61, /* V4L2_PIX_FMT_NV61M */
+	DRM_FORMAT_YUV420, /* V4L2_PIX_FMT_YUV420M */
+	DRM_FORMAT_YVU420, /* V4L2_PIX_FMT_YVU420M */
+	DRM_FORMAT_YUV422, /* V4L2_PIX_FMT_YUV422M */
+	DRM_FORMAT_YVU422, /* V4L2_PIX_FMT_YVU422M */
+	DRM_FORMAT_YUV444, /* V4L2_PIX_FMT_YUV444M */
+	DRM_FORMAT_YVU444, /* V4L2_PIX_FMT_YVU444M */
+
+	/* for backward compatibility */
+	DRM_FORMAT_XBGR8888, /* V4L2_PIX_FMT_XRGB32 */
+	DRM_FORMAT_ABGR8888, /* V4L2_PIX_FMT_ARGB32 */
 };
 
 static int
@@ -1429,6 +1462,19 @@ vsp2_get_capabilities(void)
 	return 0;
 }
 
+static bool
+vsp2_check_format(uint32_t color_format)
+{
+	int i;
+
+	for (i = 0; i < (int)ARRAY_SIZE(vsp2_support_formats); i++) {
+		if (color_format == vsp2_support_formats[i])
+			return true;
+	}
+
+	return false;
+}
+
 WL_EXPORT struct v4l2_device_interface v4l2_device_interface = {
 	.init = vsp2_init,
 
@@ -1447,4 +1493,5 @@ WL_EXPORT struct v4l2_device_interface v4l2_device_interface = {
 #endif
 
 	.get_capabilities = vsp2_get_capabilities,
+	.check_format = vsp2_check_format,
 };
