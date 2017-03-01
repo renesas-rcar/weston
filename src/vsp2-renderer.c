@@ -1308,6 +1308,11 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 		return 0;
 	}
 
+	if (src->left + (int)src->width <= 0 || src->top + (int)src->height <= 0) {
+		DBG("ignoring the source right/bottom less than equal zero. src:(%d, %d) %dx%d\n", src->left, src->top, src->width, src->height);
+		return 0;
+	}
+
 #ifdef VSP2_SCALER_ENABLED
 	int should_use_scaler = 0;
 
@@ -1324,11 +1329,13 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 
 	if (src->left < 0) {
 		src->width += src->left;
+		dst->left -= src->left;
 		src->left = 0;
 	}
 
 	if (src->top < 0) {
 		src->height += src->top;
+		dst->top -= src->top;
 		src->top = 0;
 	}
 
