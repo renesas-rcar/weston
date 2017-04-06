@@ -1072,6 +1072,9 @@ vsp2_comp_flush(struct vsp_device *vsp)
 	int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
 	DBG("flush vsp composition.\n");
+#ifdef VSP2_SCALER_ENABLED
+	vsp->scaler_count = 0;
+#endif
 
 	// enable links and queue buffer
 	for (i = 0; i < vsp->input_count; i++)
@@ -1385,7 +1388,6 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 		// if all scaler buffers have already been used, we must compose now.
                 if (vsp->scaler_count == vsp->scaler_max) {
 			vsp2_comp_flush(vsp);
-			vsp->scaler_count = 0;
 			return vsp2_do_draw_view(vsp, vs, src, dst, opaque);
 		}
 
