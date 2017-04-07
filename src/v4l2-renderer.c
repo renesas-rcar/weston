@@ -762,8 +762,8 @@ draw_view(struct weston_view *ev, struct weston_output *output)
 	pixman_region32_init(&opaque_dst_region);
 
 	if (pixman_region32_not_empty(&ev->surface->opaque)) {
-		pixman_region32_t output_region, ajusted_clip_region;
-		pixman_transform_t inverse, translate;
+		pixman_region32_t output_region, clip_region;
+		pixman_transform_t inverse;
 
 		pixman_transform_invert(&inverse, &transform);
 		transform_region(&inverse, &ev->surface->opaque, &opaque_dst_region);
@@ -772,11 +772,17 @@ draw_view(struct weston_view *ev, struct weston_output *output)
 
 		pixman_region32_intersect(&opaque_dst_region, &opaque_dst_region, &output_region);
 
-		/* clipping */
-		pixman_transform_init_translate(&translate, pixman_int_to_fixed(-output->x), pixman_int_to_fixed(-output->y));
-		transform_region(&translate, &ev->clip, &ajusted_clip_region);
-		pixman_region32_subtract(&opaque_dst_region, &opaque_dst_region, &ajusted_clip_region);
+		pixman_region32_init_rect(&clip_region, output->x, output->y, output->width, output->height);
+		pixman_region32_intersect(&clip_region, &clip_region, &ev->clip);
 
+		/* clipping */
+		if (pixman_region32_not_empty(&clip_region)) {
+			pixman_region32_t adjusted_clip_region;
+			pixman_transform_t translate;
+			pixman_transform_init_translate(&translate, pixman_int_to_fixed(-output->x), pixman_int_to_fixed(-output->y));
+			transform_region(&translate, &clip_region, &adjusted_clip_region);
+			pixman_region32_subtract(&opaque_dst_region, &opaque_dst_region, &adjusted_clip_region);
+		}
 		transform_region(&transform, &opaque_dst_region, &opaque_src_region);
 	}
 
