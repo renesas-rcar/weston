@@ -943,7 +943,7 @@ vsp2_request_buffer(int fd, enum v4l2_buf_type type, int count)
 #define vsp2_request_output_buffer(fd, cnt) \
 	vsp2_request_buffer((fd), V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, (cnt))
 
-static void
+static bool
 vsp2_comp_begin(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *out)
 {
 	struct vsp_device *vsp = (struct vsp_device*)dev;
@@ -959,20 +959,24 @@ vsp2_comp_begin(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *o
 		goto skip;
 	}
 
-	vsp2_set_output(vsp, output);
+	if (vsp2_set_output(vsp, output))
+		return false;
 
 	// dump the old setting
-	vsp2_request_capture_buffer(vsp->wpf->devnode.fd, 0);
+	if (vsp2_request_capture_buffer(vsp->wpf->devnode.fd, 0))
+		return false;
 
 	// set format for composition output via wpf.0
 	fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-	vsp2_set_format(vsp->wpf->devnode.fd, fmt, 0);
+	if (vsp2_set_format(vsp->wpf->devnode.fd, fmt, 0))
+		return false;
 
 	// set back the type to be used by bru as an input
 	fmt->type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
 	// we require only one buffer for wpf.0
-	vsp2_request_capture_buffer(vsp->wpf->devnode.fd, 1);
+	if (vsp2_request_capture_buffer(vsp->wpf->devnode.fd, 1))
+		return false;
 
 	// keep the current setting
 	vsp->current_wpf_fmt = *fmt;
@@ -980,6 +984,7 @@ vsp2_comp_begin(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *o
 skip:
 	vsp->output_surface_state = &output->surface_state;
 	DBG("output set to dmabuf=%d\n", vsp->output_surface_state->base.planes[0].dmafd);
+	return true;
 }
 
 static int

@@ -854,7 +854,8 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 	struct v4l2_renderer *renderer = (struct v4l2_renderer*)compositor->renderer;
 	struct weston_view *view;
 
-	device_interface->begin_compose(renderer->device, vo->output);
+	if (!device_interface->begin_compose(renderer->device, vo->output))
+		return;
 
 	wl_list_for_each_reverse(view, &compositor->view_list, link) {
 		if (view->plane == &compositor->primary_plane)
