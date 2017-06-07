@@ -26,6 +26,9 @@
  *	Takanari Hayama <taki@igel.co.jp>
  */
 
+#ifndef V4L2_RENDERER_H
+#define V4L2_RENDERER_H
+
 #include "config.h"
 
 #include "compositor.h"
@@ -42,3 +45,5 @@ struct v4l2_renderer_interface {
 	void (*output_destroy)(struct weston_output *output);
 	void (*set_output_buffer)(struct weston_output *output, int bo_index);
 };
+
+#endif /* !V4L2_RENDERER_H */
