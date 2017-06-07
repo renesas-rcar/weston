@@ -80,15 +80,15 @@ struct vsp_renderer_output {
 #define VSP_SCALER_MAX	1
 #define VSP_SCALER_MIN_PIXELS	4	// UDS can't take pixels smaller than this
 
-struct __vsp2_media_entity {
+struct vsp2_media_entity_node {
 	const char *name;
 	int fd;
 	struct media_entity_desc entity;
 };
 
 struct vsp2_media_entity {
-	struct __vsp2_media_entity devnode;
-	struct __vsp2_media_entity subdev;
+	struct vsp2_media_entity_node devnode;
+	struct vsp2_media_entity_node subdev;
 	struct media_link_desc link;
 };
 
@@ -405,7 +405,7 @@ vsp2_scan_device_and_reset_links(int fd, struct vsp2_media_entity *entities, int
 		}
 
 		// check if we need this entity
-		struct __vsp2_media_entity *node = NULL;
+		struct vsp2_media_entity_node *node = NULL;
 
 		for (n = 0; n < count && node == NULL; n++) {
 			if ((entities[n].devnode.name != NULL) &&
@@ -418,6 +418,11 @@ vsp2_scan_device_and_reset_links(int fd, struct vsp2_media_entity *entities, int
 			         (strstr(entity.name, entities[n].subdev.name)) &&
 				 (entity.type == MEDIA_ENT_T_V4L2_SUBDEV))
 				node = &entities[n].subdev;
+			/* MISRA C:2012 Rule 15.7
+			   All if..else if constructs shall be terminated
+			   with an else statement */
+			else
+			    node = NULL;
 		}
 
 		if (node) {
@@ -551,9 +556,9 @@ vsp2_init(int media_fd, struct media_device_info *info, struct weston_config *co
 	vsp->bru->link.sink.entity = vsp->wpf->subdev.entity.id;
 	vsp->bru->link.flags = MEDIA_LNK_FL_ENABLED;
 
-	struct media_link_desc *link = &vsp->bru->link;
+	struct media_link_desc *media_link = &vsp->bru->link;
 
-	if (ioctl(vsp->base.media_fd, MEDIA_IOC_SETUP_LINK, link) < 0) {
+	if (ioctl(vsp->base.media_fd, MEDIA_IOC_SETUP_LINK, media_link) < 0) {
 		weston_log("setting a link between bru and wpf failed.\n");
 		goto error;
 	}
@@ -688,6 +693,10 @@ vsp2_set_format(int fd, struct v4l2_format *fmt, int opaque)
 		else
 			/* ABGR32 surfaces are premultiplied. */
 			fmt->fmt.pix_mp.flags = V4L2_PIX_FMT_FLAG_PREMUL_ALPHA;
+		break;
+
+	default:
+		break; /* nothing to do */
 	}
 
 	ret = ioctl(fd, VIDIOC_S_FMT, fmt);
@@ -868,7 +877,7 @@ vsp2_dequeue_capture_buffer(int fd)
 }
 
 static inline int
-_vsp2_queue_buffer(int fd, enum v4l2_buf_type type, struct vsp_surface_state *vs)
+vsp2_queue_buffer(int fd, enum v4l2_buf_type type, struct vsp_surface_state *vs)
 {
 	struct v4l2_plane planes[VIDEO_MAX_PLANES] = { 0 };
 	struct v4l2_buffer buf = {
@@ -906,13 +915,13 @@ _vsp2_queue_buffer(int fd, enum v4l2_buf_type type, struct vsp_surface_state *vs
 }
 
 #define vsp2_queue_capture_buffer(fd, vs) \
-	_vsp2_queue_buffer((fd), V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, (vs))
+	vsp2_queue_buffer((fd), V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, (vs))
 
 #define vsp2_queue_output_buffer(fd, vs) \
-	_vsp2_queue_buffer((fd), V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, (vs))
+	vsp2_queue_buffer((fd), V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, (vs))
 
 static inline int
-_vsp2_request_buffer(int fd, enum v4l2_buf_type type, int count)
+vsp2_request_buffer(int fd, enum v4l2_buf_type type, int count)
 {
 	struct v4l2_requestbuffers reqbuf = {
 		.type = type,
@@ -929,10 +938,10 @@ _vsp2_request_buffer(int fd, enum v4l2_buf_type type, int count)
 }
 
 #define vsp2_request_capture_buffer(fd, cnt) \
-	_vsp2_request_buffer((fd), V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, (cnt))
+	vsp2_request_buffer((fd), V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, (cnt))
 
 #define vsp2_request_output_buffer(fd, cnt) \
-	_vsp2_request_buffer((fd), V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, (cnt))
+	vsp2_request_buffer((fd), V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, (cnt))
 
 static void
 vsp2_comp_begin(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *out)
@@ -981,7 +990,7 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 	struct v4l2_rect *dst = &input->dst;
 	struct vsp2_media_entity *rpf = input->rpf;
 	struct vsp2_media_entity *bru = vsp->bru;
-	struct media_link_desc *link = &rpf->link;
+	struct media_link_desc *media_link = &rpf->link;
 	struct v4l2_subdev_format subdev_fmt = {
 		.which = V4L2_SUBDEV_FORMAT_ACTIVE
 	};
@@ -994,11 +1003,11 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 
 	// enable link associated with this pad
 	if (enable)
-		link->flags |= MEDIA_LNK_FL_ENABLED;
+		media_link->flags |= MEDIA_LNK_FL_ENABLED;
 	else
-		link->flags &= ~MEDIA_LNK_FL_ENABLED;
+		media_link->flags &= ~MEDIA_LNK_FL_ENABLED;
 
-	if (ioctl(vsp->base.media_fd, MEDIA_IOC_SETUP_LINK, link) < 0) {
+	if (ioctl(vsp->base.media_fd, MEDIA_IOC_SETUP_LINK, media_link) < 0) {
 		weston_log("enabling media link setup failed.\n");
 		return -1;
 	}
@@ -1055,14 +1064,14 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 
 	// so does the BRU input. get the pad index from the link desc.
 	// the reset are the same.
-	subdev_fmt.pad = link->sink.index;
+	subdev_fmt.pad = media_link->sink.index;
 	if (ioctl(bru->subdev.fd, VIDIOC_SUBDEV_S_FMT, &subdev_fmt) < 0) {
 		weston_log("set composition format via subdev failed.\n");
 		return -1;
 	}
 
 	// set a composition paramters
-	subdev_sel.pad = link->sink.index;
+	subdev_sel.pad = media_link->sink.index;
 	subdev_sel.target = V4L2_SEL_TGT_COMPOSE;
 	subdev_sel.r = *dst;
 	if (ioctl(bru->subdev.fd, VIDIOC_SUBDEV_S_SELECTION, &subdev_sel) < 0) {
@@ -1094,12 +1103,18 @@ vsp2_comp_flush(struct vsp_device *vsp)
 #endif
 
 	// enable links and queue buffer
-	for (i = 0; i < vsp->input_count; i++)
-		vsp2_comp_setup_inputs(vsp, &vsp->inputs[i], true);
+	for (i = 0; i < vsp->input_count; i++) {
+		if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[i], true)) {
+			if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[i], false))
+				goto error;
+		}
+	}
 
 	// disable unused inputs
-	for (i = vsp->input_count; i < vsp->input_max; i++)
-		vsp2_comp_setup_inputs(vsp, &vsp->inputs[i], false);
+	for (i = vsp->input_count; i < vsp->input_max; i++) {
+		if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[i], false))
+			goto error;
+	}
 
 	// get an output pad
 	fd = vsp->wpf->devnode.fd;
@@ -1154,7 +1169,8 @@ vsp2_comp_finish(struct v4l2_renderer_device *dev)
 	struct vsp_device *vsp = (struct vsp_device*)dev;
 
 	if (vsp->input_count > 0)
-		vsp2_comp_flush(vsp);
+		if (vsp2_comp_flush(vsp))
+			weston_log("failed vsp composition.\n");
 
 	vsp->state = VSP_STATE_IDLE;
 	DBG("complete vsp composition.\n");
@@ -1348,13 +1364,13 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 #endif
 
 	if (src->left < 0) {
-		src->width += src->left;
+		src->width = (unsigned int)((int)src->width + src->left);
 		dst->left -= src->left;
 		src->left = 0;
 	}
 
 	if (src->top < 0) {
-		src->height += src->top;
+		src->height = (unsigned int)((int)src->top + src->top);
 		dst->top -= src->top;
 		src->top = 0;
 	}
@@ -1404,7 +1420,8 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 
 		// if all scaler buffers have already been used, we must compose now.
                 if (vsp->scaler_count == vsp->scaler_max) {
-			vsp2_comp_flush(vsp);
+			if (vsp2_comp_flush(vsp))
+				return -1;
 			return vsp2_do_draw_view(vsp, vs, src, dst, opaque);
 		}
 
@@ -1416,7 +1433,7 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 	// check if we should flush now
 	vsp->input_count++;
 	if (vsp->input_count == vsp->input_max)
-		vsp2_comp_flush(vsp);
+		return vsp2_comp_flush(vsp);
 
 	return 0;
 }
