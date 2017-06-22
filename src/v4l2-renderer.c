@@ -1743,24 +1743,19 @@ v4l2_renderer_init(struct weston_compositor *ec, int drm_fd, char *drm_fn)
 		weston_log("Can't get media device info.");
 		goto error;
 	}
-	weston_log("Media controller API version %u.%u.%u\n",
-		   (info.media_version >> 16) & 0xff,
-		   (info.media_version >>  8) & 0xff,
-		   (info.media_version)       & 0xff);
-	weston_log_continue("Media device information\n"
-			    "------------------------\n"
-			    "driver         %s\n"
-			    "model          %s\n"
-			    "serial         %s\n"
-			    "bus info       %s\n"
-			    "hw revision    0x%x\n"
-			    "driver version %u.%u.%u\n",
-			    info.driver, info.model,
-			    info.serial, info.bus_info,
-			    info.hw_revision,
-			    (info.driver_version >> 16) & 0xff,
-			    (info.driver_version >>  8) & 0xff,
-			    (info.driver_version)       & 0xff);
+
+	weston_log("Media device info:\n"
+		   "\tdriver		%s\n"
+		   "\tmodel		%s\n"
+		   "\tserial		%s\n"
+		   "\tbus info		%s\n"
+		   "\tmedia version	%u.%u.%u\n"
+		   "\thw revision	0x%x\n"
+		   "\tdriver version	%u\n",
+		   info.driver, info.model, info.serial, info.bus_info,
+		   (info.media_version >> 16u) & 0xff,
+		   (info.media_version >> 8u) & 0xff, info.media_version,
+		   info.hw_revision, info.driver_version);
 
 	/* Get device module to use */
 	weston_config_section_get_string(section, "device-module",
