@@ -194,6 +194,19 @@ v4l2_create_gl_renderer(struct weston_compositor *ec, struct v4l2_renderer *rend
 	return 0;
 }
 
+static void
+v4l2_gl_gbm_surface_destroy(struct v4l2_output_state *state)
+{
+	int i;
+	struct gbm_kms_surface *surface = (struct gbm_kms_surface *)state->gbm_surface;
+	for (i = 0; i < 2; i++) {
+		int n = i % state->bo_count;
+		if (surface->bo[n])
+			gbm_bo_destroy((struct gbm_bo *)surface->bo[n]);
+	}
+	gbm_surface_destroy(state->gbm_surface);
+}
+
 static int
 v4l2_init_gl_output(struct weston_output *output, struct v4l2_renderer *renderer)
 {
@@ -220,7 +233,7 @@ v4l2_init_gl_output(struct weston_output *output, struct v4l2_renderer *renderer
 				   n, state->bo[n].map, state->bo[n].dmafd,
 				   state->bo[n].stride) < 0) {
 			weston_log("%s: failed to set bo to gbm surface\n", __func__);
-			gbm_surface_destroy(state->gbm_surface);
+			v4l2_gl_gbm_surface_destroy(state);
 			return -1;
 		}
 	}
@@ -234,7 +247,7 @@ v4l2_init_gl_output(struct weston_output *output, struct v4l2_renderer *renderer
 				       gl_renderer->opaque_attribs,
 				       &format, 1) < 0) {
 		weston_log("%s: failed to create gl renderer output state\n", __func__);
-		gbm_surface_destroy(state->gbm_surface);
+		v4l2_gl_gbm_surface_destroy(state);
 		return -1;
 	}
 	output->compositor->read_format = read_format;
@@ -255,6 +268,8 @@ v4l2_gl_output_destroy(struct weston_output *output,
 	gl_renderer->output_destroy(output);
 	output->renderer_state = state;
 	output->compositor->renderer = &renderer->base;
+
+	v4l2_gl_gbm_surface_destroy(state);
 }
 
 static void
