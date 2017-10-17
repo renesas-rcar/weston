@@ -116,7 +116,7 @@ struct vsp2_media_entity {
 
 enum {
 	VSPB_RPF0, VSPB_RPF1, VSPB_RPF2, VSPB_RPF3, VSPB_RPF4,
-	VSPB_BRU,
+	VSPB_BRU, VSPB_BRS,
 	VSPB_WPF0,
 	VSPB_ENTITY_MAX
 };
@@ -129,6 +129,7 @@ static struct vsp2_media_entity vspb_entities[] = {
 	MEDIA_ENTITY(VSPB_RPF4, "rpf.4 input", "rpf.4", 1, 4),	// rpf.4:1 -> bru:4
 
 	MEDIA_ENTITY(VSPB_BRU, NULL, "bru", 5, 0),			// bru:5 -> wpf.0:0
+	MEDIA_ENTITY(VSPB_BRS, NULL, "brs", 2, 0),			// brs:2 -> wfp.0:0
 
 	MEDIA_ENTITY(VSPB_WPF0, "wpf.0 output", "wpf.0", -1, -1)	// immutable
 };
@@ -367,7 +368,7 @@ vsp2_scan_device_and_reset_links(int fd, struct vsp2_media_entity *entities, int
 	struct media_entity_desc entity = { .id = 0 };
 	struct media_links_enum links_enum = { .pads = NULL };
 	struct media_link_desc *links = NULL;
-	int max_links = 0, n, ret = 0;
+	int max_links = 0, n, ret = 0, input_count = 0;
 
 	while (1) {
 		entity.id |= MEDIA_ENT_ID_FLAG_NEXT;
@@ -398,6 +399,9 @@ vsp2_scan_device_and_reset_links(int fd, struct vsp2_media_entity *entities, int
 				weston_log("reset link on entity=%d link=%d failed. ignore error.\n",
 					   entity.id, n);
 		}
+
+		if (strstr(entity.name, "input"))
+			input_count++;
 
 		// check if we need this entity
 		struct vsp2_media_entity_node *node = NULL;
@@ -446,7 +450,7 @@ vsp2_scan_device_and_reset_links(int fd, struct vsp2_media_entity *entities, int
 	if (links)
 		free(links);
 
-	return ret;
+	return ret ? ret : input_count;
 }
 
 static struct v4l2_renderer_device*
@@ -454,7 +458,7 @@ vsp2_init(int media_fd, struct media_device_info *info, struct v4l2_renderer_bac
 {
 	struct vsp_device *vsp = NULL;
 	char *device_name;
-	int i;
+	int i, input_count;
 
 	/* Get device name */
 	if ((device_name = strchr(info->bus_info, ':')))
@@ -493,12 +497,18 @@ vsp2_init(int media_fd, struct media_device_info *info, struct v4l2_renderer_bac
 	if (vsp->input_max > VSP_INPUT_MAX)
 		vsp->input_max = VSP_INPUT_MAX;
 
-	if (vsp2_scan_device_and_reset_links(media_fd, vspb_entities, VSPB_ENTITY_MAX) < 0) {
+	if ((input_count = vsp2_scan_device_and_reset_links(media_fd, vspb_entities, VSPB_ENTITY_MAX)) < 0) {
 		weston_log("Device scan and reset failed.\n");
 		goto error;
 	}
 
-	vsp->bru = &vspb_entities[VSPB_BRU];
+	if (vsp->input_max > input_count)
+		vsp->input_max = input_count;
+
+	if (vspb_entities[VSPB_BRU].subdev.fd >= 0)
+		vsp->bru = &vspb_entities[VSPB_BRU];
+	else
+		vsp->bru = &vspb_entities[VSPB_BRS];
 	vsp->wpf = &vspb_entities[VSPB_WPF0];
 
 	/* Initialize inputs */
@@ -727,8 +737,8 @@ vsp2_set_output(struct vsp_device *vsp, struct vsp_renderer_output *out)
 
 	DBG("Setting output size to %dx%d\n", out->base.width, out->base.height);
 
-	/* set up bru:5 */
-	subdev_format.pad = 5;
+	/* set up bru:5 or brs:2 */
+	subdev_format.pad = vsp->bru->link.source.index;
 	if (ioctl(vsp->bru->subdev.fd, VIDIOC_SUBDEV_S_FMT, &subdev_format) < 0)
 		return -1;
 
