@@ -47,6 +47,8 @@
 #include "v4l2-renderer.h"
 #include "v4l2-renderer-device.h"
 
+#include "shared/helpers.h"
+
 #if defined(V4L2_GL_FALLBACK_ENABLED) || defined(VSP2_SCALER_ENABLED)
 #include <unistd.h>
 #include <xf86drm.h>
@@ -181,6 +183,8 @@ struct vsp_device {
 	struct v4l2_renderer_device base;
 
 	vsp_state_t state;
+	bool compose_output;
+	struct v4l2_rect compose_region;
 
 	struct vsp_surface_state *output_surface_state;
 
@@ -724,18 +728,18 @@ vsp2_set_format(int fd, struct v4l2_format *fmt, int opaque)
 }
 
 static int
-vsp2_set_output(struct vsp_device *vsp, struct vsp_renderer_output *out)
+vsp2_set_output(struct vsp_device *vsp, struct v4l2_surface_state *out, struct v4l2_rect *crop)
 {
 	struct v4l2_subdev_format subdev_format = {
 		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
 		.format = {
-			.width = out->base.width,
-			.height = out->base.height,
+			.width = crop->width,
+			.height = crop->height,
 			.code = V4L2_MBUS_FMT_ARGB8888_1X32	// TODO: does this have to be flexible?
 		}
 	};
 
-	DBG("Setting output size to %dx%d\n", out->base.width, out->base.height);
+	DBG("Setting output size to %dx%d\n", out->width, out->height);
 
 	/* set up bru:5 or brs:2 */
 	subdev_format.pad = vsp->bru->link.source.index;
@@ -748,6 +752,8 @@ vsp2_set_output(struct vsp_device *vsp, struct vsp_renderer_output *out)
 		return -1;
 
 	subdev_format.pad = 1;
+	subdev_format.format.width = out->width;
+	subdev_format.format.height = out->height;
 	if (ioctl(vsp->wpf->subdev.fd, VIDIOC_SUBDEV_S_FMT, &subdev_format) < 0)
 		return -1;
 
@@ -955,13 +961,13 @@ vsp2_comp_begin(struct v4l2_renderer_device *dev, struct v4l2_renderer_output *o
 
 	vsp->state = VSP_STATE_START;
 
+	//set empty
+	vsp->compose_region.width = vsp->compose_region.height = 0;
+
 	if (!memcmp(&vsp->current_wpf_fmt, fmt, sizeof(struct v4l2_format))) {
 		DBG(">>> No need to set up the output.\n");
 		goto skip;
 	}
-
-	if (vsp2_set_output(vsp, output))
-		return false;
 
 	// dump the old setting
 	if (vsp2_request_capture_buffer(vsp->wpf->devnode.fd, 0))
@@ -1077,13 +1083,15 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 	}
 
 	// set a composition paramters
-	subdev_sel.pad = media_link->sink.index;
-	subdev_sel.target = V4L2_SEL_TGT_COMPOSE;
-	subdev_sel.r = *dst;
-	if (ioctl(bru->subdev.fd, VIDIOC_SUBDEV_S_SELECTION, &subdev_sel) < 0) {
-		weston_log("set compose parameter failed: %dx%d@(%d,%d).\n",
-			   dst->width, dst->height, dst->left, dst->top);
-		return -1;
+	if (media_link->sink.index != 0) {
+		subdev_sel.pad = media_link->sink.index;
+		subdev_sel.target = V4L2_SEL_TGT_COMPOSE;
+		subdev_sel.r = *dst;
+		if (ioctl(bru->subdev.fd, VIDIOC_SUBDEV_S_SELECTION, &subdev_sel) < 0) {
+			weston_log("set compose parameter failed: %dx%d@(%d,%d).\n",
+				   dst->width, dst->height, dst->left, dst->top);
+			return -1;
+		}
 	}
 
 	// request a buffer
@@ -1102,14 +1110,44 @@ vsp2_comp_flush(struct vsp_device *vsp)
 {
 	int i, fd;
 	int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	struct v4l2_subdev_selection subdev_sel = {
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+		.pad = 1,
+		.target = V4L2_SEL_TGT_COMPOSE,
+		.r = vsp->compose_region,
+	};
 
 	DBG("flush vsp composition.\n");
 #ifdef VSP2_SCALER_ENABLED
 	vsp->scaler_count = 0;
 #endif
 
+	struct vsp_surface_state *ovs = vsp->output_surface_state;
+
+	if (vsp2_set_output(vsp, &ovs->base, &vsp->compose_region))
+		goto error;
+
+	if (ioctl(vsp->wpf->subdev.fd, VIDIOC_SUBDEV_S_SELECTION, &subdev_sel) < 0) {
+		weston_log("set compose parameter failed: %dx%d@(%d,%d).\n",
+			   vsp->compose_region.width, vsp->compose_region.height,
+			   vsp->compose_region.left, vsp->compose_region.top);
+		goto error;
+	}
+
 	// enable links and queue buffer
-	for (i = 0; i < vsp->input_count; i++) {
+	if (vsp->compose_output) {
+		// composition with output
+		vsp->inputs[0].src = vsp->inputs[0].dst = vsp->compose_region;
+		vsp->compose_output = false;
+	}
+	if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[0], true)) {
+		if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[0], false))
+			goto error;
+	}
+
+	for (i = 1; i < vsp->input_count; i++) {
+		vsp->inputs[i].dst.left -= vsp->compose_region.left;
+		vsp->inputs[i].dst.top -= vsp->compose_region.top;
 		if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[i], true)) {
 			if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[i], false))
 				goto error;
@@ -1336,6 +1374,31 @@ vsp2_do_scaling(struct vsp_scaler_device *scaler, struct vsp_input *input,
 }
 #endif
 
+
+/* Expand the region of r1 to include r2.
+   If r1 is empty, meaning width or height are zero, r1 is set to r2 */
+static void
+vsp2_union_rect(struct v4l2_rect *r1, struct v4l2_rect *r2)
+{
+	int left, top, right, bottom;
+
+	/* Is r1 empty ? */
+	if (r1->width == 0 || r1->height == 0) {
+		*r1 = *r2;
+		return;
+	}
+
+	left = MIN(r1->left, r2->left);
+	right = MAX(r1->left + (int)r1->width, r2->left + (int)r2->width);
+	top = MIN(r1->top, r2->top);
+	bottom = MAX(r1->top + (int)r1->height, r2->top + (int)r2->height);
+
+	r1->left = left;
+	r1->top = top;
+	r1->width = (unsigned int)(right - left);
+	r1->height = (unsigned int)(bottom - top);
+}
+
 static int
 vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v4l2_rect *src, struct v4l2_rect *dst,
 		 int opaque)
@@ -1398,6 +1461,10 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 		if (vsp->input_count == 0) {
 			DBG("VSP_STATE_COMPOSING -> START (compose with output)\n");
 			vsp->state = VSP_STATE_START;
+			vsp->compose_output = true;
+			//set empty
+			vsp->compose_region.width = vsp->compose_region.height = 0;
+
 			if (vsp2_do_draw_view(vsp, vsp->output_surface_state,
 					     &vsp->output_surface_state->base.src_rect,
 					     &vsp->output_surface_state->base.dst_rect, 0) < 0)
@@ -1409,6 +1476,9 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 		weston_log("unknown state... %d\n", vsp->state);
 		return -1;
 	}
+
+	if (!vsp->compose_output || (vsp->compose_output && vsp->input_count))
+		vsp2_union_rect(&vsp->compose_region, dst);
 
 	struct vsp_input *input = &vsp->inputs[vsp->input_count];
 

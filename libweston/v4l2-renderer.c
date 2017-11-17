@@ -757,12 +757,13 @@ set_v4l2_rect(pixman_region32_t *region, struct v4l2_rect *rect)
 }
 
 static void
-draw_view(struct weston_view *ev, struct weston_output *output)
+draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_t *damage)
 {
 	struct v4l2_renderer *renderer = (struct v4l2_renderer*)output->compositor->renderer;
 	struct v4l2_surface_state *vs = get_surface_state(ev->surface);
 	pixman_region32_t dst_region, src_region;
 	pixman_region32_t region, opaque_src_region, opaque_dst_region;
+	pixman_region32_t tmp_region;
 	pixman_transform_t transform;
 
 	if (!vs)
@@ -772,9 +773,11 @@ draw_view(struct weston_view *ev, struct weston_output *output)
 	pixman_region32_init(&region);
 	pixman_region32_intersect(&region,
 				  &ev->transform.boundingbox,
-				  &output->region);
-	pixman_region32_subtract(&region, &region, &ev->clip);
-	if (!pixman_region32_not_empty(&region)) {
+				  damage);
+	pixman_region32_init(&tmp_region);
+	pixman_region32_subtract(&tmp_region, &region, &ev->clip);
+
+	if (!pixman_region32_not_empty(&tmp_region)) {
 		DBG("%s: skipping a view: not visible: view=(%d,%d)-(%d,%d), repaint=(%d,%d)-(%d,%d)\n",
 		    __func__,
 		    ev->transform.boundingbox.extents.x1, ev->transform.boundingbox.extents.y1,
@@ -814,7 +817,9 @@ draw_view(struct weston_view *ev, struct weston_output *output)
 		pixman_transform_invert(&inverse, &transform);
 		transform_region(&inverse, &ev->surface->opaque, &opaque_dst_region);
 
-		pixman_region32_init_rect(&output_region, 0, 0, output->width, output->height);
+		pixman_region32_init(&output_region);
+		pixman_region32_copy(&output_region, damage);
+		region_global_to_output(output, &output_region);
 
 		pixman_region32_intersect(&opaque_dst_region, &opaque_dst_region, &output_region);
 
@@ -872,14 +877,18 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 	struct v4l2_output_state *vo = get_output_state(output);
 	struct v4l2_renderer *renderer = (struct v4l2_renderer*)compositor->renderer;
 	struct weston_view *view;
+	pixman_region32_t damage_extents;
 
 	if (!device_interface->begin_compose(renderer->device, vo->output))
 		return;
 
+	pixman_region32_init_with_extents(&damage_extents,
+					  pixman_region32_extents(damage));
 	wl_list_for_each_reverse(view, &compositor->view_list, link) {
 		if (view->plane == &compositor->primary_plane)
-			draw_view(view, output);
+			draw_view(view, output, &damage_extents);
 	}
+	pixman_region32_fini(&damage_extents);
 
 	device_interface->finish_compose(renderer->device);
 }
