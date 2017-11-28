@@ -129,7 +129,7 @@ static struct vsp2_media_entity vspb_entities[] = {
 	MEDIA_ENTITY(VSPB_RPF4, "rpf.4 input", "rpf.4", 1, 4),	// rpf.4:1 -> bru:4
 
 	MEDIA_ENTITY(VSPB_BRU, NULL, "bru", 5, 0),			// bru:5 -> wpf.0:0
-	MEDIA_ENTITY(VSPB_BRS, NULL, "brs", 2, 0),			// brs:2 -> wfp.0:0
+	MEDIA_ENTITY(VSPB_BRS, NULL, "brs", 2, 0),			// brs:2 -> wpf.0:0
 
 	MEDIA_ENTITY(VSPB_WPF0, "wpf.0 output", "wpf.0", -1, -1)	// immutable
 };
