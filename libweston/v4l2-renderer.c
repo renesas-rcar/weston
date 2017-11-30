@@ -110,8 +110,8 @@ struct v4l2_renderer {
 	struct wl_signal destroy_signal;
 
 #ifdef V4L2_GL_FALLBACK_ENABLED
-	int gl_fallback;
-	int defer_attach;
+	bool gl_fallback;
+	bool defer_attach;
 	struct gbm_device *gbm;
 	struct weston_renderer *gl_renderer;
 #endif
@@ -417,16 +417,16 @@ v4l2_gl_repaint(struct weston_output *output,
 			continue;
 
 		if (renderer->defer_attach) {
-			if (vs->notify_attach == 1) {
+			if (vs->notify_attach) {
 				DBG("%s: attach gl\n", __func__);
 				v4l2_gl_attach(ev->surface, vs->buffer_ref.buffer);
-				vs->notify_attach = 0;
+				vs->notify_attach = false;
 			}
 			if (vs->flush_damage) {
 				DBG("%s: flush damage\n", __func__);
 				pixman_region32_copy(&ev->surface->damage, &vs->damage);
 				v4l2_gl_flush_damage(ev->surface);
-				vs->flush_damage = 0;
+				vs->flush_damage = false;
 				pixman_region32_clear(&ev->surface->damage);
 			}
 		}
@@ -1012,7 +1012,7 @@ v4l2_renderer_flush_damage(struct weston_surface *surface)
 	if (vs->renderer->gl_fallback) {
 		if (vs->renderer->defer_attach) {
 			DBG("%s: set flush damage flag.\n", __func__);
-			vs->flush_damage = 1;
+			vs->flush_damage = true;
 			pixman_region32_copy(&vs->damage, &surface->damage);
 		} else {
 			v4l2_gl_flush_damage(surface);
@@ -1632,7 +1632,7 @@ v4l2_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 		if (vs->renderer->defer_attach) {
 			if (!vs->notify_attach)
 				v4l2_gl_attach(es, NULL);
-			vs->notify_attach = 1;
+			vs->notify_attach = true;
 		} else {
 			v4l2_gl_attach(es, buffer);
 		}
@@ -1721,7 +1721,7 @@ v4l2_renderer_create_surface(struct weston_surface *surface)
 
 #ifdef V4L2_GL_FALLBACK_ENABLED
 	vs->surface_type = V4L2_SURFACE_DEFAULT;
-	vs->notify_attach = -1;
+	vs->notify_attach = false;
 	if (vr->defer_attach)
 		pixman_region32_init(&vs->damage);
 #endif
@@ -2006,7 +2006,7 @@ v4l2_renderer_output_create(struct weston_output *output, struct v4l2_bo_state *
 	if ((renderer->gl_fallback) && (v4l2_init_gl_output(output, renderer) < 0)) {
 		// error...
 		weston_log("Can't initialize gl-renderer. Disabling gl-fallback.\n");
-		renderer->gl_fallback = 0;
+		renderer->gl_fallback = false;
 	}
 #endif
 
