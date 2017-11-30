@@ -26,6 +26,9 @@
  *	Takanari Hayama <taki@igel.co.jp>
  */
 
+#ifndef V4L2_RENDERER_DEVICE_H
+#define V4L2_RENDERER_DEVICE_H
+
 #include "config.h"
 
 #include "compositor.h"
@@ -145,3 +148,5 @@ struct v4l2_device_interface {
 	uint32_t (*get_capabilities)(void);
 	bool (*check_format)(uint32_t color_format, int num_planes);
 };
+
+#endif /* !V4L2_RENDERER_DEVICE_H */
