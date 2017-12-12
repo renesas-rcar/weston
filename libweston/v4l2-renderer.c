@@ -786,6 +786,8 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 		    output->region.extents.x2, output->region.extents.y2);
 		goto out;
 	}
+	if (pixman_region32_equal(damage, &output->region))
+		pixman_region32_copy(&region, &tmp_region);
 
 	/* you may sometime get not-yet-attached views */
 	if (vs->planes[0].dmafd == 0)
@@ -885,8 +887,12 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 	pixman_region32_init_with_extents(&damage_extents,
 					  pixman_region32_extents(damage));
 	wl_list_for_each_reverse(view, &compositor->view_list, link) {
-		if (view->plane == &compositor->primary_plane)
-			draw_view(view, output, &damage_extents);
+		if (view->plane == &compositor->primary_plane) {
+			if (renderer->device->enable_composition_with_damage)
+				draw_view(view, output, &damage_extents);
+			else
+				draw_view(view, output, &output->region);
+		}
 	}
 	pixman_region32_fini(&damage_extents);
 

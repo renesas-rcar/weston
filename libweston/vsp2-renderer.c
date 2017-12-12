@@ -457,6 +457,35 @@ vsp2_scan_device_and_reset_links(int fd, struct vsp2_media_entity *entities, int
 	return ret ? ret : input_count;
 }
 
+static bool
+vsp2_check_enable_composition_with_damage(struct vsp_device *vsp)
+{
+	struct v4l2_subdev_format subdev_format = {
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+		.pad = 1,
+		.format = {
+			.width = 256,
+			.height = 256,
+			.code = V4L2_MBUS_FMT_ARGB8888_1X32
+		}
+	};
+	struct v4l2_subdev_selection subdev_sel = {
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+		.pad = 1,
+		.target = V4L2_SEL_TGT_COMPOSE,
+		.r = {16, 16, 16, 16}
+	};
+
+	if (ioctl(vsp->wpf->subdev.fd, VIDIOC_SUBDEV_S_FMT, &subdev_format) < 0)
+		return false;
+
+	if (ioctl(vsp->wpf->subdev.fd, VIDIOC_SUBDEV_S_SELECTION, &subdev_sel) < 0)
+		return false;
+
+	weston_log("Enable composition with damage\n");
+	return true;
+}
+
 static struct v4l2_renderer_device*
 vsp2_init(int media_fd, struct media_device_info *info, struct v4l2_renderer_backend_config *config)
 {
@@ -574,6 +603,9 @@ vsp2_init(int media_fd, struct media_device_info *info, struct v4l2_renderer_bac
 
 	/* output is always enabled - immutable */
 	vsp2_check_capability(vsp->wpf->devnode.fd, vsp->wpf->devnode.entity.name);
+
+	vsp->base.enable_composition_with_damage =
+		vsp2_check_enable_composition_with_damage(vsp);
 
 #ifdef VSP2_SCALER_ENABLED
 	vsp->scaler_max = VSP_SCALER_MAX;
@@ -738,6 +770,12 @@ vsp2_set_output(struct vsp_device *vsp, struct v4l2_surface_state *out, struct v
 			.code = V4L2_MBUS_FMT_ARGB8888_1X32	// TODO: does this have to be flexible?
 		}
 	};
+	static int prev_out_width = 0, prev_out_height = 0;
+	static struct v4l2_rect prev_crop = {0};
+
+	if (prev_out_width == out->width && prev_out_height == out->height &&
+	    prev_crop.width == crop->width && prev_crop.height == crop->height)
+		return 0;
 
 	DBG("Setting output size to %dx%d\n", out->width, out->height);
 
@@ -757,6 +795,9 @@ vsp2_set_output(struct vsp_device *vsp, struct v4l2_surface_state *out, struct v
 	if (ioctl(vsp->wpf->subdev.fd, VIDIOC_SUBDEV_S_FMT, &subdev_format) < 0)
 		return -1;
 
+	prev_out_width = out->width;
+	prev_out_height = out->height;
+	prev_crop = *crop;
 	return 0;
 }
 
@@ -1106,40 +1147,58 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 }
 
 static int
-vsp2_comp_flush(struct vsp_device *vsp)
+vsp2_set_output_with_damage(struct vsp_device *vsp)
 {
-	int i, fd;
-	int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	struct v4l2_subdev_selection subdev_sel = {
 		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
 		.pad = 1,
 		.target = V4L2_SEL_TGT_COMPOSE,
 		.r = vsp->compose_region,
 	};
+	struct vsp_surface_state *ovs = vsp->output_surface_state;
+
+	if (vsp2_set_output(vsp, &ovs->base, &vsp->compose_region))
+		return -1;
+
+	if (ioctl(vsp->wpf->subdev.fd, VIDIOC_SUBDEV_S_SELECTION, &subdev_sel) < 0) {
+		weston_log("set compose parameter failed: %dx%d@(%d,%d).\n",
+			   vsp->compose_region.width, vsp->compose_region.height,
+			   vsp->compose_region.left, vsp->compose_region.top);
+		return -1;
+	}
+
+	if (vsp->compose_output) {
+		// composition with output
+		vsp->inputs[0].src = vsp->inputs[0].dst = vsp->compose_region;
+		vsp->compose_output = false;
+	}
+
+	return 0;
+}
+
+static int
+vsp2_comp_flush(struct vsp_device *vsp)
+{
+	int i, fd;
+	int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
 	DBG("flush vsp composition.\n");
 #ifdef VSP2_SCALER_ENABLED
 	vsp->scaler_count = 0;
 #endif
 
-	struct vsp_surface_state *ovs = vsp->output_surface_state;
-
-	if (vsp2_set_output(vsp, &ovs->base, &vsp->compose_region))
-		goto error;
-
-	if (ioctl(vsp->wpf->subdev.fd, VIDIOC_SUBDEV_S_SELECTION, &subdev_sel) < 0) {
-		weston_log("set compose parameter failed: %dx%d@(%d,%d).\n",
-			   vsp->compose_region.width, vsp->compose_region.height,
-			   vsp->compose_region.left, vsp->compose_region.top);
-		goto error;
+	if (vsp->base.enable_composition_with_damage) {
+		if (vsp2_set_output_with_damage(vsp) < 0)
+			goto error;
+	} else {
+		struct vsp_surface_state *ovs = vsp->output_surface_state;
+		vsp->compose_region.width = ovs->base.width;
+		vsp->compose_region.height = ovs->base.height;
+		if (vsp2_set_output(vsp, &ovs->base, &vsp->compose_region))
+			goto error;
 	}
 
 	// enable links and queue buffer
-	if (vsp->compose_output) {
-		// composition with output
-		vsp->inputs[0].src = vsp->inputs[0].dst = vsp->compose_region;
-		vsp->compose_output = false;
-	}
 	if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[0], true)) {
 		if (vsp2_comp_setup_inputs(vsp, &vsp->inputs[0], false))
 			goto error;
@@ -1461,9 +1520,12 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 		if (vsp->input_count == 0) {
 			DBG("VSP_STATE_COMPOSING -> START (compose with output)\n");
 			vsp->state = VSP_STATE_START;
-			vsp->compose_output = true;
-			//set empty
-			vsp->compose_region.width = vsp->compose_region.height = 0;
+			if (vsp->base.enable_composition_with_damage) {
+				vsp->compose_output = true;
+				//set empty
+				vsp->compose_region.width =
+					vsp->compose_region.height = 0;
+			}
 
 			if (vsp2_do_draw_view(vsp, vsp->output_surface_state,
 					     &vsp->output_surface_state->base.src_rect,
@@ -1477,8 +1539,10 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 		return -1;
 	}
 
-	if (!vsp->compose_output || (vsp->compose_output && vsp->input_count))
-		vsp2_union_rect(&vsp->compose_region, dst);
+	if (vsp->base.enable_composition_with_damage)
+		if (!vsp->compose_output || (vsp->compose_output &&
+					     vsp->input_count))
+			vsp2_union_rect(&vsp->compose_region, dst);
 
 	struct vsp_input *input = &vsp->inputs[vsp->input_count];
 
