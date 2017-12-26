@@ -813,17 +813,14 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 	pixman_region32_init(&opaque_dst_region);
 
 	if (pixman_region32_not_empty(&ev->surface->opaque)) {
-		pixman_region32_t output_region, clip_region;
-		pixman_transform_t inverse;
+		pixman_region32_t clip_region;
+		float ev_x, ev_y;
 
-		pixman_transform_invert(&inverse, &transform);
-		transform_region(&inverse, &ev->surface->opaque, &opaque_dst_region);
-
-		pixman_region32_init(&output_region);
-		pixman_region32_copy(&output_region, damage);
-		region_global_to_output(output, &output_region);
-
-		pixman_region32_intersect(&opaque_dst_region, &opaque_dst_region, &output_region);
+		pixman_region32_copy(&opaque_dst_region, &ev->surface->opaque);
+		weston_view_to_global_float(ev, 0, 0, &ev_x, &ev_y);
+		pixman_region32_translate(&opaque_dst_region, (int)ev_x, (int)ev_y);
+		pixman_region32_intersect(&opaque_dst_region, &opaque_dst_region, damage);
+		region_global_to_output(output, &opaque_dst_region);
 
 		pixman_region32_init_rect(&clip_region, output->x, output->y, output->width, output->height);
 		pixman_region32_intersect(&clip_region, &clip_region, &ev->clip);
