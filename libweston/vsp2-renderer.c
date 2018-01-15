@@ -732,6 +732,13 @@ vsp2_set_format(int fd, struct v4l2_format *fmt, int opaque)
 			fmt->fmt.pix_mp.flags = V4L2_PIX_FMT_FLAG_PREMUL_ALPHA;
 		break;
 
+	case V4L2_PIX_FMT_ARGB32:
+		if (opaque)
+			fmt->fmt.pix_mp.pixelformat = V4L2_PIX_FMT_XRGB32;
+		else
+			/* ARGB32 surfaces are premultipled. */
+			fmt->fmt.pix_mp.flags = V4L2_PIX_FMT_FLAG_PREMUL_ALPHA;
+		break;
 	default:
 		break; /* nothing to do */
 	}
