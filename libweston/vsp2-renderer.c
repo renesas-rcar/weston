@@ -1186,7 +1186,7 @@ vsp2_set_output_with_damage(struct vsp_device *vsp)
 static int
 vsp2_comp_flush(struct vsp_device *vsp)
 {
-	int i, fd;
+	int i, fd, ret = 0;
 	int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
 	DBG("flush vsp composition.\n");
@@ -1244,19 +1244,20 @@ vsp2_comp_flush(struct vsp_device *vsp)
 	type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	if (ioctl(fd, VIDIOC_STREAMON, &type) == -1) {
 		weston_log("VIDIOC_STREAMON failed for output (%s).\n", strerror(errno));
-		goto error;
+		ret = -1;
+		goto stream_off;
 	}
 
 	// dequeue buffer
 	if (vsp2_dequeue_capture_buffer(fd) < 0)
-		goto error;
+		ret = -1;
 
 	type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	if (ioctl(fd, VIDIOC_STREAMOFF, &type) == -1) {
 		weston_log("%s: VIDIOC_STREAMOFF failed on %d (%s).\n", __func__, fd, strerror(errno));
-		goto error;
 	}
 
+stream_off:
 	// stream off
 	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	for (i = 0; i < vsp->input_count; i++) {
@@ -1266,7 +1267,7 @@ vsp2_comp_flush(struct vsp_device *vsp)
 	}
 
 	vsp->input_count = 0;
-	return 0;
+	return ret;
 
 error:
 	vsp->input_count = 0;
@@ -1297,7 +1298,7 @@ vsp2_do_scaling(struct vsp_scaler_device *scaler, struct vsp_input *input,
 {
 	struct vsp_surface_state *scaler_vs = &scaler->state;
 	struct v4l2_format *fmt = &scaler_vs->fmt;
-	int type;
+	int type, ret = 0;
 
 	struct vsp_surface_state *vs = input->input_surface_states;
 	struct v4l2_subdev_format subdev_fmt = {
@@ -1407,22 +1408,13 @@ vsp2_do_scaling(struct vsp_scaler_device *scaler, struct vsp_input *input,
 	if (ioctl(scaler->wpf->devnode.fd, VIDIOC_STREAMON, &type) == -1) {
 		weston_log("VIDIOC_STREAMON failed for scaler output. (%s)\n",
 			   strerror(errno));
-		return -1;
+		ret = -1;
+		goto stream_off;
 	}
 
-	if (vsp2_dequeue_capture_buffer(scaler->wpf->devnode.fd) < 0)
-		return -1;
-
-	type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-	if (ioctl(scaler->wpf->devnode.fd, VIDIOC_STREAMOFF, &type) == -1) {
-		weston_log("VIDIOC_STREAMOFF failed for scaler output. (%s)\n",
-			   strerror(errno));
-	}
-
-	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-	if (ioctl(scaler->rpf->devnode.fd, VIDIOC_STREAMOFF, &type) == -1) {
-		weston_log("VIDIOC_STREAMOFF failed for scaler input. (%s)\n",
-			   strerror(errno));
+	if (vsp2_dequeue_capture_buffer(scaler->wpf->devnode.fd) < 0) {
+		ret = -1;
+		goto stream_off;
 	}
 
 	scaler_vs->base.width = dst->width;
@@ -1436,7 +1428,20 @@ vsp2_do_scaling(struct vsp_scaler_device *scaler, struct vsp_input *input,
 	input->src.width = dst->width;
 	input->src.height = dst->height;
 
-	return 0;
+stream_off:
+	type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+	if (ioctl(scaler->wpf->devnode.fd, VIDIOC_STREAMOFF, &type) == -1) {
+		weston_log("VIDIOC_STREAMOFF failed for scaler output. (%s)\n",
+			   strerror(errno));
+	}
+
+	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	if (ioctl(scaler->rpf->devnode.fd, VIDIOC_STREAMOFF, &type) == -1) {
+		weston_log("VIDIOC_STREAMOFF failed for scaler input. (%s)\n",
+			   strerror(errno));
+	}
+
+	return ret;
 }
 #endif
 
