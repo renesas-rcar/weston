@@ -1,5 +1,5 @@
 /*
- * Copyright © 2014 Renesas Electronics Corp.
+ * Copyright © 2014-2018 Renesas Electronics Corp.
  *
  * Based on pixman-renderer by:
  * Copyright © 2012 Intel Corporation

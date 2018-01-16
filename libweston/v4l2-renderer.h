@@ -1,5 +1,5 @@
 /*
- * Copyright © 2014 Renesas Electronics Corp.
+ * Copyright © 2014-2018 Renesas Electronics Corp.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
