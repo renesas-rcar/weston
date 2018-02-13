@@ -761,7 +761,7 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 {
 	struct v4l2_renderer *renderer = (struct v4l2_renderer*)output->compositor->renderer;
 	struct v4l2_surface_state *vs = get_surface_state(ev->surface);
-	pixman_region32_t dst_region, src_region;
+	pixman_region32_t dst_region, src_region, buffer_region;
 	pixman_region32_t region, opaque_src_region, opaque_dst_region;
 	pixman_region32_t tmp_region;
 	pixman_transform_t transform;
@@ -842,6 +842,18 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 	region_global_to_output(output, &dst_region);
 
 	transform_region(&transform, &dst_region, &src_region);
+
+	/*
+	  Prevent misalignment due to calculation error by calculating
+	  intersection of source and buffer region.
+	 */
+	pixman_region32_init_rect(&buffer_region, 0, 0,
+				  ev->surface->width_from_buffer * ev->surface->buffer_viewport.buffer.scale,
+				  ev->surface->height_from_buffer * ev->surface->buffer_viewport.buffer.scale);
+	pixman_region32_intersect(&src_region, &src_region, &buffer_region);
+	pixman_region32_intersect(&opaque_src_region, &opaque_src_region,
+				  &buffer_region);
+
 	set_v4l2_rect(&dst_region, &vs->dst_rect);
 	set_v4l2_rect(&src_region, &vs->src_rect);
 
