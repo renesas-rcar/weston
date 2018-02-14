@@ -1618,6 +1618,15 @@ vsp2_can_compose(struct v4l2_renderer_device *dev, struct v4l2_view *view_list, 
 		struct weston_surface *surf = ev->surface;
 		float *vd = surf->buffer_to_surface_matrix.d;
 
+		if (ev->alpha < 1.0 && pixman_region32_not_empty(&ev->surface->opaque)) {
+			pixman_box32_t *surface_rect = pixman_region32_extents(&ev->transform.boundingbox);
+			pixman_box32_t *opaque_rect = pixman_region32_extents(&ev->surface->opaque);
+			if (opaque_rect->x1 != 0 || opaque_rect->y1 != 0 ||
+			    opaque_rect->x2 != surface_rect->x2 - surface_rect->x1 ||
+			    opaque_rect->y2 != surface_rect->y2 - surface_rect->y1)
+				return 0;
+		}
+
 		if ((ev->transform.matrix.type | surf->buffer_to_surface_matrix.type) & WESTON_MATRIX_TRANSFORM_ROTATE)
 			return 0;
 #ifdef VSP2_SCALER_ENABLED
