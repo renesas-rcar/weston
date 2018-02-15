@@ -79,6 +79,9 @@
 #endif
 #endif
 
+#define max(a, b) (((a) > (b)) ? (a) : (b))
+#define min(a, b) (((a) > (b)) ? (b) : (a))
+
 struct v4l2_output_state {
 	struct v4l2_renderer_output *output;
 	uint32_t stride;
@@ -745,6 +748,36 @@ calculate_transform_matrix(struct weston_view *ev, struct weston_output *output,
 }
 
 static void
+view_to_global_region(struct weston_view *ev, pixman_region32_t *src_region,
+		      pixman_region32_t *dst_region)
+{
+	pixman_region32_t region;
+	pixman_box32_t *b = pixman_region32_extents(src_region);
+	float surf_x[4] = {b->x1, b->x2, b->x2, b->x1};
+	float surf_y[4] = {b->y1, b->y1, b->y2, b->y2};
+	float min_x, min_y, max_x, max_y;
+	int i;
+
+	for (i = 0; i < 4; i++)
+		weston_view_to_global_float(ev, surf_x[i], surf_y[i],
+					    &surf_x[i], &surf_y[i]);
+
+	min_x = max_x = surf_x[0];
+	min_y = max_y = surf_y[0];
+	for (i = 1; i < 4; i++) {
+		min_x = min(min_x, surf_x[i]);
+		max_x = max(max_x, surf_x[i]);
+		min_y = min(min_y, surf_y[i]);
+		max_y = max(max_y, surf_y[i]);
+	}
+
+	pixman_region32_init_rect(&region, (int)min_x, (int)min_y,
+				  (int)(max_x - min_x), (int)(max_y -min_y));
+	pixman_region32_copy(dst_region, &region);
+	pixman_region32_fini(&region);
+}
+
+static void
 set_v4l2_rect(pixman_region32_t *region, struct v4l2_rect *rect)
 {
 	pixman_box32_t *bbox;
@@ -814,12 +847,10 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 
 	if (pixman_region32_not_empty(&ev->surface->opaque)) {
 		pixman_region32_t clip_region;
-		float ev_x, ev_y;
 
-		pixman_region32_copy(&opaque_dst_region, &ev->surface->opaque);
-		weston_view_to_global_float(ev, 0, 0, &ev_x, &ev_y);
-		pixman_region32_translate(&opaque_dst_region, (int)ev_x, (int)ev_y);
-		pixman_region32_intersect(&opaque_dst_region, &opaque_dst_region, damage);
+		view_to_global_region(ev, &ev->surface->opaque,
+				      &opaque_dst_region);
+		pixman_region32_intersect(&opaque_dst_region, &opaque_dst_region, &region);
 		region_global_to_output(output, &opaque_dst_region);
 
 		pixman_region32_init_rect(&clip_region, output->x, output->y, output->width, output->height);
