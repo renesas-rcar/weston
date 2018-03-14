@@ -858,11 +858,8 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 
 		/* clipping */
 		if (pixman_region32_not_empty(&clip_region)) {
-			pixman_region32_t adjusted_clip_region;
-			pixman_transform_t translate;
-			pixman_transform_init_translate(&translate, pixman_int_to_fixed(-output->x), pixman_int_to_fixed(-output->y));
-			transform_region(&translate, &clip_region, &adjusted_clip_region);
-			pixman_region32_subtract(&opaque_dst_region, &opaque_dst_region, &adjusted_clip_region);
+			pixman_region32_translate(&clip_region, -output->x, -output->y);
+			pixman_region32_subtract(&opaque_dst_region, &opaque_dst_region, &clip_region);
 		}
 		transform_region(&transform, &opaque_dst_region, &opaque_src_region);
 	}
