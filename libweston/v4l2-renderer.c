@@ -823,7 +823,7 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 		pixman_region32_copy(&region, &tmp_region);
 
 	/* you may sometime get not-yet-attached views */
-	if (vs->planes[0].dmafd == 0)
+	if (vs->planes[0].dmafd < 0)
 		goto out;
 
 	/*
@@ -1074,6 +1074,19 @@ v4l2_renderer_flush_damage(struct weston_surface *surface)
 }
 
 static void
+v4l2_release_dmabuf(struct v4l2_surface_state *vs)
+{
+    int i;
+
+    for (i = 0; i < vs->num_planes; i++) {
+	    if (vs->planes[i].dmafd >= 0) {
+		    close(vs->planes[i].dmafd);
+		    vs->planes[i].dmafd = -1;
+	    }
+    }
+}
+
+static void
 v4l2_release_kms_bo(struct v4l2_surface_state *vs)
 {
 	int i;
@@ -1083,11 +1096,6 @@ v4l2_release_kms_bo(struct v4l2_surface_state *vs)
 
 	for (i = 0; i < vs->num_planes; i++) {
 		if (vs->planes[i].bo) {
-			if (vs->planes[i].dmafd >= 0) {
-				close(vs->planes[i].dmafd);
-				vs->planes[i].dmafd = -1;
-			}
-
 			if (kms_bo_unmap(vs->planes[i].bo))
 				weston_log("kms_bo_unmap failed.\n");
 
@@ -1096,19 +1104,6 @@ v4l2_release_kms_bo(struct v4l2_surface_state *vs)
 			vs->planes[i].bo = NULL;
 		}
 	}
-}
-
-static void
-buffer_state_handle_buffer_destroy(struct wl_listener *listener, void *data)
-{
-	struct v4l2_surface_state *vs;
-
-	vs = container_of(listener, struct v4l2_surface_state,
-			  buffer_destroy_listener);
-
-	v4l2_release_kms_bo(vs);
-
-	vs->buffer_destroy_listener.notify = NULL;
 }
 
 static int
@@ -1216,11 +1211,8 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	}
 
 	// release if there's allocated buffer
+	v4l2_release_dmabuf(vs);
 	v4l2_release_kms_bo(vs);
-	if (vs->dmabuf_buffer_destroy_listener.notify) {
-		wl_list_remove(&vs->dmabuf_buffer_destroy_listener.link);
-		vs->dmabuf_buffer_destroy_listener.notify = NULL;
-	}
 
 	// create a reference to the shm_buffer.
 	vs->width = buffer->width;
@@ -1280,20 +1272,9 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	return 0;
 
 error:
+	v4l2_release_dmabuf(vs);
 	v4l2_release_kms_bo(vs);
 	return -1;
-}
-
-static void
-dmabuf_buffer_state_handle_buffer_destroy(struct wl_listener *listener,
-					void *data)
-{
-	struct v4l2_surface_state *vs;
-
-	vs = container_of(listener, struct v4l2_surface_state,
-			  dmabuf_buffer_destroy_listener);
-	vs->planes[0].dmafd = 0;
-	vs->dmabuf_buffer_destroy_listener.notify = NULL;
 }
 
 static inline unsigned int
@@ -1472,8 +1453,9 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 	vs->bpp = bpp;
 	vs->num_planes = dmabuf->attributes.n_planes;
 	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+		if ((vs->planes[i].dmafd = dup(dmabuf->attributes.fd[i])) == -1)
+			goto err;
 		vs->planes[i].stride = dmabuf->attributes.stride[i];
-		vs->planes[i].dmafd = dmabuf->attributes.fd[i];
 		vs->planes[i].length = vs->planes[i].bytesused
 			= vs->planes[i].stride *
 				v4l2_renderer_plane_height(i, vs->height,
@@ -1484,6 +1466,10 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 		dmabuf->attributes.width, dmabuf->attributes.height, dmabuf->attributes.fd[0], dmabuf->attributes.stride);
 
 	return 0;
+
+err:
+	v4l2_release_dmabuf(vs);
+	return -1;
 }
 
 static int
@@ -1585,8 +1571,9 @@ attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer
 	vs->bpp = bpp;
 	vs->num_planes = kbuf->num_planes;
 	for (i = 0; i < kbuf->num_planes; i++) {
+		if ((vs->planes[i].dmafd = dup(kbuf->planes[i].fd)) == -1)
+			goto err;
 		vs->planes[i].stride = kbuf->planes[i].stride;
-		vs->planes[i].dmafd = kbuf->planes[i].fd;
 		vs->planes[i].length = vs->planes[i].bytesused
 			= vs->planes[i].stride *
 				v4l2_renderer_plane_height(i, vs->height,
@@ -1596,6 +1583,10 @@ attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer
 	DBG("%s: %dx%d buffer attached (dmabuf=%d, stride=%d).\n", __func__, kbuf->width, kbuf->height, kbuf->fd, kbuf->stride);
 
 	return 0;
+
+err:
+	v4l2_release_dmabuf(vs);
+	return -1;
 }
 
 static int
@@ -1606,6 +1597,7 @@ v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer 
 
 	buffer->legacy_buffer = (struct wl_buffer *)buffer->resource;
 
+	v4l2_release_dmabuf(vs);
 	v4l2_release_kms_bo(vs);
 
 	if ((dmabuf = linux_dmabuf_buffer_get(buffer->resource))) {
@@ -1619,19 +1611,9 @@ v4l2_renderer_attach_dmabuf(struct v4l2_surface_state *vs, struct weston_buffer 
 	}
 
 	if (device_interface->attach_buffer(vs) == -1) {
-		vs->planes[0].dmafd = 0;
+		v4l2_release_dmabuf(vs);
 		return -1;
 	}
-
-	if (vs->dmabuf_buffer_destroy_listener.notify) {
-		wl_list_remove(&vs->dmabuf_buffer_destroy_listener.link);
-		vs->dmabuf_buffer_destroy_listener.notify = NULL;
-	}
-
-	vs->dmabuf_buffer_destroy_listener.notify
-		= dmabuf_buffer_state_handle_buffer_destroy;
-	wl_resource_add_destroy_listener(buffer->resource,
-				&vs->dmabuf_buffer_destroy_listener);
 
 	return 0;
 }
@@ -1651,12 +1633,6 @@ v4l2_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 	// increment the refrence counter. all done in weston_buffer_reference().
 	weston_buffer_reference(&vs->buffer_ref, buffer);
 
-	// clear the destroy listener if set.
-	if (vs->buffer_destroy_listener.notify) {
-		wl_list_remove(&vs->buffer_destroy_listener.link);
-		vs->buffer_destroy_listener.notify = NULL;
-	}
-
 	if (buffer) {
 		// for shm_buffer.
 		shm_buffer = wl_shm_buffer_get(buffer->resource);
@@ -1671,12 +1647,6 @@ v4l2_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 			weston_buffer_reference(&vs->buffer_ref, NULL);
 			return;
 		}
-
-		// listen to the buffer destroy event.
-		vs->buffer_destroy_listener.notify =
-			buffer_state_handle_buffer_destroy;
-		wl_signal_add(&buffer->destroy_signal,
-			      &vs->buffer_destroy_listener);
 	}
 
 #ifdef V4L2_GL_FALLBACK_ENABLED
@@ -1697,18 +1667,10 @@ v4l2_renderer_surface_state_destroy(struct v4l2_surface_state *vs)
 {
 	wl_list_remove(&vs->surface_destroy_listener.link);
 	wl_list_remove(&vs->renderer_destroy_listener.link);
-	if (vs->buffer_destroy_listener.notify) {
-		wl_list_remove(&vs->buffer_destroy_listener.link);
-		vs->buffer_destroy_listener.notify = NULL;
-	}
-
-	if (vs->dmabuf_buffer_destroy_listener.notify) {
-		wl_list_remove(&vs->dmabuf_buffer_destroy_listener.link);
-		vs->dmabuf_buffer_destroy_listener.notify = NULL;
-	}
 
 	// TODO: Release any resources associated to the surface here.
 
+	v4l2_release_dmabuf(vs);
 	v4l2_release_kms_bo(vs);
 	weston_buffer_reference(&vs->buffer_ref, NULL);
 
