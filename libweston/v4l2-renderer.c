@@ -798,6 +798,7 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 	pixman_region32_t region, opaque_src_region, opaque_dst_region;
 	pixman_region32_t tmp_region;
 	pixman_transform_t transform;
+	pixman_box32_t *box;
 
 	if (!vs)
 		return;
@@ -842,10 +843,31 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 	/* we have to compute a transform matrix */
 	calculate_transform_matrix(ev, output, &transform);
 
+	/* find out the final destination in the output coordinate */
+	pixman_region32_init(&dst_region);
+	pixman_region32_copy(&dst_region, &region);
+	region_global_to_output(output, &dst_region);
+
+	transform_region(&transform, &dst_region, &src_region);
+
+	/*
+	  Prevent misalignment due to calculation error by calculating
+	  intersection of source and buffer region.
+	 */
+	pixman_region32_init_rect(&buffer_region, 0, 0,
+				  ev->surface->width_from_buffer * ev->surface->buffer_viewport.buffer.scale,
+				  ev->surface->height_from_buffer * ev->surface->buffer_viewport.buffer.scale);
+	pixman_region32_intersect(&src_region, &src_region, &buffer_region);
+
 	pixman_region32_init(&opaque_src_region);
 	pixman_region32_init(&opaque_dst_region);
 
-	if (pixman_region32_not_empty(&ev->surface->opaque)) {
+	box = pixman_region32_extents(&ev->surface->opaque);
+	/* Check if the opaque region is whole of surface */
+	if (ev->surface->width == box->x2 && ev->surface->height == box->y2) {
+		pixman_region32_copy(&opaque_src_region, &src_region);
+		pixman_region32_copy(&opaque_dst_region, &dst_region);
+	} else if (pixman_region32_not_empty(&ev->surface->opaque)) {
 		pixman_region32_t clip_region;
 
 		view_to_global_region(ev, &ev->surface->opaque,
@@ -862,25 +884,9 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 			pixman_region32_subtract(&opaque_dst_region, &opaque_dst_region, &clip_region);
 		}
 		transform_region(&transform, &opaque_dst_region, &opaque_src_region);
+		pixman_region32_intersect(&opaque_src_region,
+					  &opaque_src_region, &buffer_region);
 	}
-
-	/* find out the final destination in the output coordinate */
-	pixman_region32_init(&dst_region);
-	pixman_region32_copy(&dst_region, &region);
-	region_global_to_output(output, &dst_region);
-
-	transform_region(&transform, &dst_region, &src_region);
-
-	/*
-	  Prevent misalignment due to calculation error by calculating
-	  intersection of source and buffer region.
-	 */
-	pixman_region32_init_rect(&buffer_region, 0, 0,
-				  ev->surface->width_from_buffer * ev->surface->buffer_viewport.buffer.scale,
-				  ev->surface->height_from_buffer * ev->surface->buffer_viewport.buffer.scale);
-	pixman_region32_intersect(&src_region, &src_region, &buffer_region);
-	pixman_region32_intersect(&opaque_src_region, &opaque_src_region,
-				  &buffer_region);
 
 	set_v4l2_rect(&dst_region, &vs->dst_rect);
 	set_v4l2_rect(&src_region, &vs->src_rect);
