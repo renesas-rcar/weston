@@ -803,6 +803,8 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 	if (!vs)
 		return;
 
+	vs->in_expanded_damage = false;
+
 	/* a surface in the repaint area? */
 	pixman_region32_init(&region);
 	pixman_region32_intersect(&region,
@@ -915,6 +917,56 @@ out:
 	pixman_region32_fini(&region);
 }
 
+/* If color format of the surface in damage region is multi sample pixels,
+   the damage region is expanded to contain whole of the surface. */
+static void
+expand_damage_region(struct weston_output *output, pixman_region32_t *damage)
+{
+	struct weston_compositor *compositor = output->compositor;
+	struct weston_view *view;
+	struct v4l2_surface_state *vs;
+	pixman_region32_t region;
+	bool check_again, expanded = false;
+
+	pixman_region32_init(&region);
+	do {
+		check_again = false;
+		wl_list_for_each_reverse(view, &compositor->view_list, link) {
+			if (view->plane != &compositor->primary_plane)
+				continue;
+
+			vs = get_surface_state(view->surface);
+			if (vs->in_expanded_damage || !vs->multi_sample_pixels)
+				continue;
+
+			pixman_box32_t *b = pixman_region32_extents(damage);
+			pixman_region32_intersect_rect(&region,
+						       &view->transform.boundingbox,
+						       b->x1, b->y1,
+						       b->x2 - b->x1, b->y2 - b->y1);
+			if (!pixman_region32_not_empty(&region))
+				continue;
+
+			pixman_region32_union(damage,
+					      &view->transform.boundingbox,
+					      damage);
+			vs->in_expanded_damage = true;
+			check_again = true;
+			expanded = true;
+		}
+	} while (check_again);
+	pixman_region32_fini(&region);
+
+	if (!expanded)
+		return;
+
+	pixman_region32_intersect(damage, damage, &output->region);
+
+	/* force update output image in new damage region */
+	wl_list_for_each_reverse(view, &compositor->view_list, link)
+		pixman_region32_subtract(&view->clip, &view->clip, damage);
+}
+
 static void
 repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 {
@@ -927,6 +979,7 @@ repaint_surfaces(struct weston_output *output, pixman_region32_t *damage)
 	if (!device_interface->begin_compose(renderer->device, vo->output))
 		return;
 
+	expand_damage_region(output, damage);
 	pixman_region32_init_with_extents(&damage_extents,
 					  pixman_region32_extents(damage));
 	wl_list_for_each_reverse(view, &compositor->view_list, link) {
@@ -1129,6 +1182,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	int num_planes, width, height, plane_height[3];
 	unsigned bo_width[3], bo_height[3];
 	int image_data_stride[3];
+	bool multi_sample_pixels = false;
 	int i;
 
 	width = wl_shm_buffer_get_width(shm_buffer);
@@ -1166,6 +1220,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		bpp = 2;
 		bo_width[0] = (unsigned int)((width + 1) * bpp / 4);
 		image_data_stride[0] = width * bpp;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_SHM_FORMAT_NV12:
@@ -1179,6 +1234,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		bo_height[1] = (unsigned int)((height + 1) / 2);
 		image_data_stride[0] = width;
 		image_data_stride[1] = width;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_SHM_FORMAT_YUV420:
@@ -1197,6 +1253,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		image_data_stride[0] = width;
 		image_data_stride[1] = width / 2;
 		image_data_stride[2] = image_data_stride[1];
+		multi_sample_pixels = true;
 		break;
 
 	default:
@@ -1234,6 +1291,8 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		vs->planes[i].shm_buffer_image_data_height = plane_height[i];
 	}
 	vs->bpp = bpp;
+	vs->multi_sample_pixels = multi_sample_pixels;
+
 
 	if (device_interface->attach_buffer(vs) == -1) {
 		weston_log("attach_buffer failed.\n");
@@ -1334,6 +1393,7 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 {
 	unsigned int pixel_format;
 	int bpp, i;
+	bool multi_sample_pixels = false;
 
 	switch (dmabuf->attributes.format) {
 	case DRM_FORMAT_XRGB8888:
@@ -1381,61 +1441,73 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 	case DRM_FORMAT_YUYV:
 		pixel_format = V4L2_PIX_FMT_YUYV;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YVYU:
 		pixel_format = V4L2_PIX_FMT_YVYU;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_UYVY:
 		pixel_format = V4L2_PIX_FMT_UYVY;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_VYUY:
 		pixel_format = V4L2_PIX_FMT_VYUY;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_NV12:
 		pixel_format = V4L2_PIX_FMT_NV12M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_NV16:
 		pixel_format = V4L2_PIX_FMT_NV16M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_NV21:
 		pixel_format = V4L2_PIX_FMT_NV21M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_NV61:
 		pixel_format = V4L2_PIX_FMT_NV61M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YUV420:
 		pixel_format = V4L2_PIX_FMT_YUV420M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YVU420:
 		pixel_format = V4L2_PIX_FMT_YVU420M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YUV422:
 		pixel_format = V4L2_PIX_FMT_YUV422M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YVU422:
 		pixel_format = V4L2_PIX_FMT_YVU422M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YUV444:
@@ -1456,6 +1528,7 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 	vs->width = buffer->width = dmabuf->attributes.width;
 	vs->height = buffer->height = dmabuf->attributes.height;
 	vs->pixel_format = pixel_format;
+	vs->multi_sample_pixels = multi_sample_pixels;
 	vs->bpp = bpp;
 	vs->num_planes = dmabuf->attributes.n_planes;
 	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
@@ -1484,6 +1557,7 @@ attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer
 {
 	unsigned int pixel_format;
 	int bpp, i;
+	bool multi_sample_pixels = false;
 
 	switch (kbuf->format) {
 	case WL_KMS_FORMAT_XRGB8888:
@@ -1529,41 +1603,49 @@ attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer
 	case WL_KMS_FORMAT_YUYV:
 		pixel_format = V4L2_PIX_FMT_YUYV;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_YVYU:
 		pixel_format = V4L2_PIX_FMT_YVYU;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_UYVY:
 		pixel_format = V4L2_PIX_FMT_UYVY;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_NV12:
 		pixel_format = V4L2_PIX_FMT_NV12M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_NV16:
 		pixel_format = V4L2_PIX_FMT_NV16M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_NV21:
 		pixel_format = V4L2_PIX_FMT_NV21M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_NV61:
 		pixel_format = V4L2_PIX_FMT_NV61M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_YUV420:
 		pixel_format = V4L2_PIX_FMT_YUV420M;
 		bpp = 2;
+		multi_sample_pixels = true;
 		break;
 
 	default:
@@ -1574,6 +1656,7 @@ attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer
 	vs->width = buffer->width = kbuf->width;
 	vs->height = buffer->height = kbuf->height;
 	vs->pixel_format = pixel_format;
+	vs->multi_sample_pixels = multi_sample_pixels;
 	vs->bpp = bpp;
 	vs->num_planes = kbuf->num_planes;
 	for (i = 0; i < kbuf->num_planes; i++) {

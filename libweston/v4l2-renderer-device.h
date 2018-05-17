@@ -104,6 +104,8 @@ struct v4l2_surface_state {
 	int width;
 	int height;
 	unsigned int pixel_format;
+	bool multi_sample_pixels;
+	bool in_expanded_damage;
 
 	struct v4l2_rect src_rect;
 	struct v4l2_rect dst_rect;
