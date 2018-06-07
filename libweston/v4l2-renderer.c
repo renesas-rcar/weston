@@ -1513,11 +1513,13 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 	case DRM_FORMAT_YUV444:
 		pixel_format = V4L2_PIX_FMT_YUV444M;
 		bpp = 3;
+		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YVU444:
 		pixel_format = V4L2_PIX_FMT_YVU444M;
 		bpp = 3;
+		multi_sample_pixels = true;
 		break;
 
 	default:
