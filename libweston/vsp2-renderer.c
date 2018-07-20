@@ -70,6 +70,8 @@ struct vsp_surface_state {
 
 	struct v4l2_format fmt;
 	enum v4l2_mbus_pixelcode mbus_code;
+	uint32_t min_width;
+	uint32_t min_height;
 };
 
 struct vsp_renderer_output {
@@ -655,6 +657,7 @@ vsp2_attach_buffer(struct v4l2_surface_state *surface_state)
 	case V4L2_PIX_FMT_RGB565:
 	case V4L2_PIX_FMT_RGB332:
 		code = V4L2_MBUS_FMT_ARGB8888_1X32;
+		vs->min_width = vs->min_height = 1;
 		break;
 
 	case V4L2_PIX_FMT_YUYV:
@@ -672,6 +675,12 @@ vsp2_attach_buffer(struct v4l2_surface_state *surface_state)
 	case V4L2_PIX_FMT_YUV444M:
 	case V4L2_PIX_FMT_YVU444M:
 		code = V4L2_MBUS_FMT_AYUV8_1X32;
+		/* XXX:
+		   Need to set minimum width and height to 1 in using YUV
+		   4:4:4 color format and to set min height to 1 in using YUV
+		   4:2:2 color format. But, both of minimum width and height
+		   in using YUV color format are 2 in VSP2 driver. */
+		vs->min_width = vs->min_height = 2;
 		break;
 
 	default:
@@ -1474,7 +1483,7 @@ static int
 vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v4l2_rect *src, struct v4l2_rect *dst,
 		 int opaque)
 {
-	if (src->width < 2 || src->height < 2) {
+	if (src->width < vs->min_width || src->height < vs->min_height) {
 		DBG("ignoring the size of zeros < (%dx%d)\n", src->width, src->height);
 		return 0;
 	}
