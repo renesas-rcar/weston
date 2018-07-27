@@ -803,6 +803,10 @@ draw_view(struct weston_view *ev, struct weston_output *output, pixman_region32_
 	if (!vs)
 		return;
 
+	/* No buffer attached */
+	if (vs->num_planes == 0)
+		return;
+
 	vs->in_expanded_damage = false;
 
 	/* a surface in the repaint area? */
