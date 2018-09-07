@@ -1081,12 +1081,12 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 		return -1;
 	}
 
-	if (!enable)
-		return 0;
-
 	// dump the old setting
 	if (vsp2_request_output_buffer(rpf->devnode.fd, 0) < 0)
 		return -1;
+
+	if (!enable)
+		return 0;
 
 	// set input format
 	if (vsp2_set_format(rpf->devnode.fd, &vs->fmt, input->opaque))
