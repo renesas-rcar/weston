@@ -657,7 +657,7 @@ vsp2_attach_buffer(struct v4l2_surface_state *surface_state)
 	case V4L2_PIX_FMT_RGB565:
 	case V4L2_PIX_FMT_RGB332:
 		code = V4L2_MBUS_FMT_ARGB8888_1X32;
-		vs->min_width = vs->min_height = 1;
+		vs->min_width = vs->min_height = 1U;
 		break;
 
 	case V4L2_PIX_FMT_YUYV:
@@ -680,7 +680,7 @@ vsp2_attach_buffer(struct v4l2_surface_state *surface_state)
 		   4:4:4 color format and to set min height to 1 in using YUV
 		   4:2:2 color format. But, both of minimum width and height
 		   in using YUV color format are 2 in VSP2 driver. */
-		vs->min_width = vs->min_height = 2;
+		vs->min_width = vs->min_height = 2U;
 		break;
 
 	default:
@@ -806,8 +806,8 @@ vsp2_set_output(struct vsp_device *vsp, struct v4l2_surface_state *out, struct v
 		return -1;
 
 	subdev_format.pad = 1;
-	subdev_format.format.width = out->width;
-	subdev_format.format.height = out->height;
+	subdev_format.format.width = (__u32)out->width;
+	subdev_format.format.height = (__u32)out->height;
 	if (ioctl(vsp->wpf->subdev.fd, VIDIOC_SUBDEV_S_FMT, &subdev_format) < 0)
 		return -1;
 
@@ -1135,7 +1135,7 @@ vsp2_comp_setup_inputs(struct vsp_device *vsp, struct vsp_input *input, bool ena
 	}
 
 	// set a composition paramters
-	if (media_link->sink.index != 0) {
+	if (media_link->sink.index != 0U) {
 		subdev_sel.pad = media_link->sink.index;
 		subdev_sel.target = V4L2_SEL_TGT_COMPOSE;
 		subdev_sel.r = *dst;
@@ -1203,8 +1203,8 @@ vsp2_comp_flush(struct vsp_device *vsp)
 			goto error;
 	} else {
 		struct vsp_surface_state *ovs = vsp->output_surface_state;
-		vsp->compose_region.width = ovs->base.width;
-		vsp->compose_region.height = ovs->base.height;
+		vsp->compose_region.width = (__u32)ovs->base.width;
+		vsp->compose_region.height = (__u32)ovs->base.height;
 		if (vsp2_set_output(vsp, &ovs->base, &vsp->compose_region))
 			goto error;
 	}
@@ -1458,7 +1458,7 @@ vsp2_union_rect(struct v4l2_rect *r1, struct v4l2_rect *r2)
 	int left, top, right, bottom;
 
 	/* Is r1 empty ? */
-	if (r1->width == 0 || r1->height == 0) {
+	if (r1->width == 0U || r1->height == 0U) {
 		*r1 = *r2;
 		return;
 	}
@@ -1483,7 +1483,7 @@ vsp2_do_draw_view(struct vsp_device *vsp, struct vsp_surface_state *vs, struct v
 		return 0;
 	}
 
-	if (src->width > 8190 || src->height > 8190) {
+	if (src->width > 8190U || src->height > 8190U) {
 		weston_log("ignoring the size exceeding the limit (8190x8190) < (%dx%d)\n", src->width, src->height);
 		return 0;
 	}
