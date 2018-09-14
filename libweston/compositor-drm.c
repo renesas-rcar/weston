@@ -114,7 +114,7 @@ struct drm_backend {
 
 	int use_pixman;
 
-	int use_v4l2;
+	bool use_v4l2;
 
 	struct v4l2_renderer_config v4l2_config;
 
