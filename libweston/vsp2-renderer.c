@@ -839,9 +839,9 @@ vsp2_scaler_create_buffer(struct vsp_scaler_device *scaler, int fd,
 	if (scaler->height < height)
 		scaler->height = height;
 
-	if (vs->base.planes[0].dmafd > 0) {
+	if (vs->base.planes[0].dmafd >= 0) {
 		close(vs->base.planes[0].dmafd);
-		vs->base.planes[0].dmafd = 0;
+		vs->base.planes[0].dmafd = -1;
 		kms_bo_destroy(&vs->base.planes[0].bo);
 	}
 
@@ -862,8 +862,10 @@ vsp2_scaler_create_buffer(struct vsp_scaler_device *scaler, int fd,
 	return 0;
 
 error:
-	if (vs->base.planes[0].dmafd > 0)
+	if (vs->base.planes[0].dmafd >= 0) {
 		close(vs->base.planes[0].dmafd);
+		vs->base.planes[0].dmafd = -1;
+	}
 	kms_bo_destroy(&vs->base.planes[0].bo);
 	return -1;
 }
