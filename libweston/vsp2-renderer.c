@@ -859,8 +859,6 @@ vsp2_scaler_create_buffer(struct vsp_scaler_device *scaler, int fd,
 			       &vs->base.planes[0].dmafd))
 		goto error;
 
-	vs->base.bpp = 4;
-
 	return 0;
 
 error:

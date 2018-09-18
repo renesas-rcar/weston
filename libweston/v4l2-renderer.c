@@ -1174,7 +1174,6 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 			 struct wl_shm_buffer *shm_buffer)
 {
 	unsigned int pixel_format;
-	int bpp;
 	int fd = vs->renderer->drm_fd;
 	unsigned attr[] = {
 		KMS_BO_TYPE, KMS_BO_TYPE_SCANOUT_X8R8G8B8,
@@ -1200,36 +1199,31 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	switch (wl_shm_buffer_get_format(shm_buffer)) {
 	case WL_SHM_FORMAT_XRGB8888:
 		pixel_format = V4L2_PIX_FMT_XBGR32;
-		bpp = 4;
-		bo_width[0] = (unsigned int)((width + 1) * bpp / 4);
-		image_data_stride[0] = width * bpp;
+		bo_width[0] = (unsigned int)width;
+		image_data_stride[0] = width * 4;
 		break;
 
 	case WL_SHM_FORMAT_ARGB8888:
 		pixel_format = V4L2_PIX_FMT_ABGR32;
-		bpp = 4;
-		bo_width[0] = (unsigned int)((width + 1) * bpp / 4);
-		image_data_stride[0] = width * bpp;
+		bo_width[0] = (unsigned int)width;
+		image_data_stride[0] = width * 4;
 		break;
 
 	case WL_SHM_FORMAT_RGB565:
 		pixel_format = V4L2_PIX_FMT_RGB565;
-		bpp = 2;
-		bo_width[0] = (unsigned int)((width + 1) * bpp / 4);
-		image_data_stride[0] = width * bpp;
+		bo_width[0] = (unsigned int)((width + 1) / 2);
+		image_data_stride[0] = width * 2;
 		break;
 
 	case WL_SHM_FORMAT_YUYV:
 		pixel_format = V4L2_PIX_FMT_YUYV;
-		bpp = 2;
-		bo_width[0] = (unsigned int)((width + 1) * bpp / 4);
-		image_data_stride[0] = width * bpp;
+		bo_width[0] = (unsigned int)((width + 1) / 2);
+		image_data_stride[0] = width * 2;
 		multi_sample_pixels = true;
 		break;
 
 	case WL_SHM_FORMAT_NV12:
 		pixel_format = V4L2_PIX_FMT_NV12M;
-		bpp = 2;
 		num_planes = 2;
 		plane_height[1] = height / 2;
 		stride[1] = stride[0];
@@ -1243,7 +1237,6 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 
 	case WL_SHM_FORMAT_YUV420:
 		pixel_format = V4L2_PIX_FMT_YUV420M;
-		bpp = 2;
 		num_planes = 3;
 		plane_height[1] = height / 2;
 		plane_height[2] = height / 2;
@@ -1271,7 +1264,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 
 	if (vs->bo && vs->width == buffer->width &&
 	    vs->height == buffer->height &&
-	    vs->planes[0].stride == stride[0] && vs->bpp == bpp &&
+	    vs->planes[0].stride == stride[0] &&
 	    vs->pixel_format == pixel_format) {
 		// no need to recreate buffer
 		return 0;
@@ -1294,7 +1287,6 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		vs->planes[i].shm_buffer_image_data_stride = image_data_stride[i];
 		vs->planes[i].shm_buffer_image_data_height = plane_height[i];
 	}
-	vs->bpp = bpp;
 	vs->multi_sample_pixels = multi_sample_pixels;
 
 
@@ -1396,133 +1388,111 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 		struct linux_dmabuf_buffer *dmabuf)
 {
 	unsigned int pixel_format;
-	int bpp, i;
+	int i;
 	bool multi_sample_pixels = false;
 
 	switch (dmabuf->attributes.format) {
 	case DRM_FORMAT_XRGB8888:
 		pixel_format = V4L2_PIX_FMT_XBGR32;
-		bpp = 4;
 		break;
 
 	case DRM_FORMAT_ARGB8888:
 		pixel_format = V4L2_PIX_FMT_ABGR32;
-		bpp = 4;
 		break;
 
 	case DRM_FORMAT_BGRX8888:
 	case DRM_FORMAT_XBGR8888: /* for backward compatibility */
 		pixel_format = V4L2_PIX_FMT_XRGB32;
-		bpp = 4;
 		break;
 
 	case DRM_FORMAT_BGRA8888:
 	case DRM_FORMAT_ABGR8888: /* for backward compatibility */
 		pixel_format = V4L2_PIX_FMT_ARGB32;
-		bpp = 4;
 		break;
 
 	case DRM_FORMAT_RGB888:
 		pixel_format = V4L2_PIX_FMT_RGB24;
-		bpp = 3;
 		break;
 
 	case DRM_FORMAT_BGR888:
 		pixel_format = V4L2_PIX_FMT_BGR24;
-		bpp = 3;
 		break;
 
 	case DRM_FORMAT_RGB565:
 		pixel_format = V4L2_PIX_FMT_RGB565;
-		bpp = 2;
 		break;
 
 	case DRM_FORMAT_RGB332:
 		pixel_format = V4L2_PIX_FMT_RGB332;
-		bpp = 1;
 		break;
 
 	case DRM_FORMAT_YUYV:
 		pixel_format = V4L2_PIX_FMT_YUYV;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YVYU:
 		pixel_format = V4L2_PIX_FMT_YVYU;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_UYVY:
 		pixel_format = V4L2_PIX_FMT_UYVY;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_VYUY:
 		pixel_format = V4L2_PIX_FMT_VYUY;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_NV12:
 		pixel_format = V4L2_PIX_FMT_NV12M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_NV16:
 		pixel_format = V4L2_PIX_FMT_NV16M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_NV21:
 		pixel_format = V4L2_PIX_FMT_NV21M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_NV61:
 		pixel_format = V4L2_PIX_FMT_NV61M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YUV420:
 		pixel_format = V4L2_PIX_FMT_YUV420M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YVU420:
 		pixel_format = V4L2_PIX_FMT_YVU420M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YUV422:
 		pixel_format = V4L2_PIX_FMT_YUV422M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YVU422:
 		pixel_format = V4L2_PIX_FMT_YVU422M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YUV444:
 		pixel_format = V4L2_PIX_FMT_YUV444M;
-		bpp = 3;
 		multi_sample_pixels = true;
 		break;
 
 	case DRM_FORMAT_YVU444:
 		pixel_format = V4L2_PIX_FMT_YVU444M;
-		bpp = 3;
 		multi_sample_pixels = true;
 		break;
 
@@ -1535,7 +1505,6 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 	vs->height = buffer->height = dmabuf->attributes.height;
 	vs->pixel_format = pixel_format;
 	vs->multi_sample_pixels = multi_sample_pixels;
-	vs->bpp = bpp;
 	vs->num_planes = dmabuf->attributes.n_planes;
 	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
 		if ((vs->planes[i].dmafd = dup(dmabuf->attributes.fd[i])) == -1)
@@ -1562,95 +1531,79 @@ attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer
 		struct wl_kms_buffer *kbuf)
 {
 	unsigned int pixel_format;
-	int bpp, i;
+	int i;
 	bool multi_sample_pixels = false;
 
 	switch (kbuf->format) {
 	case WL_KMS_FORMAT_XRGB8888:
 		pixel_format = V4L2_PIX_FMT_XBGR32;
-		bpp = 4;
 		break;
 
 	case WL_KMS_FORMAT_ARGB8888:
 		pixel_format = V4L2_PIX_FMT_ABGR32;
-		bpp = 4;
 		break;
 
 	case WL_KMS_FORMAT_XBGR8888:
 		pixel_format = V4L2_PIX_FMT_XRGB32;
-		bpp = 4;
 		break;
 
 	case WL_KMS_FORMAT_ABGR8888:
 		pixel_format = V4L2_PIX_FMT_ARGB32;
-		bpp = 4;
 		break;
 
 	case WL_KMS_FORMAT_RGB888:
 		pixel_format = V4L2_PIX_FMT_RGB24;
-		bpp = 3;
 		break;
 
 	case WL_KMS_FORMAT_BGR888:
 		pixel_format = V4L2_PIX_FMT_BGR24;
-		bpp = 3;
 		break;
 
 	case WL_KMS_FORMAT_RGB565:
 		pixel_format = V4L2_PIX_FMT_RGB565;
-		bpp = 2;
 		break;
 
 	case WL_KMS_FORMAT_RGB332:
 		pixel_format = V4L2_PIX_FMT_RGB332;
-		bpp = 1;
 		break;
 
 	case WL_KMS_FORMAT_YUYV:
 		pixel_format = V4L2_PIX_FMT_YUYV;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_YVYU:
 		pixel_format = V4L2_PIX_FMT_YVYU;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_UYVY:
 		pixel_format = V4L2_PIX_FMT_UYVY;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_NV12:
 		pixel_format = V4L2_PIX_FMT_NV12M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_NV16:
 		pixel_format = V4L2_PIX_FMT_NV16M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_NV21:
 		pixel_format = V4L2_PIX_FMT_NV21M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_NV61:
 		pixel_format = V4L2_PIX_FMT_NV61M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
 	case WL_KMS_FORMAT_YUV420:
 		pixel_format = V4L2_PIX_FMT_YUV420M;
-		bpp = 2;
 		multi_sample_pixels = true;
 		break;
 
@@ -1663,7 +1616,6 @@ attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer
 	vs->height = buffer->height = kbuf->height;
 	vs->pixel_format = pixel_format;
 	vs->multi_sample_pixels = multi_sample_pixels;
-	vs->bpp = bpp;
 	vs->num_planes = kbuf->num_planes;
 	for (i = 0; i < kbuf->num_planes; i++) {
 		if ((vs->planes[i].dmafd = dup(kbuf->planes[i].fd)) == -1)
