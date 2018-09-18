@@ -842,18 +842,18 @@ vsp2_scaler_create_buffer(struct vsp_scaler_device *scaler, int fd,
 	if (vs->base.planes[0].dmafd > 0) {
 		close(vs->base.planes[0].dmafd);
 		vs->base.planes[0].dmafd = 0;
-		kms_bo_destroy(&vs->base.bo);
+		kms_bo_destroy(&vs->base.planes[0].bo);
 	}
 
 	attr[3] = (scaler->width + 0x1f) & ~0x1f;
 	attr[5] = scaler->height;
 
-	if (kms_bo_create(kms, attr, &vs->base.bo))
+	if (kms_bo_create(kms, attr, &vs->base.planes[0].bo))
 		goto error;
-	if (kms_bo_get_prop(vs->base.bo, KMS_PITCH, &stride))
+	if (kms_bo_get_prop(vs->base.planes[0].bo, KMS_PITCH, &stride))
 		goto error;
-	vs->base.bo_stride = stride;
-	if (kms_bo_get_prop(vs->base.bo, KMS_HANDLE, &handle))
+	vs->base.planes[0].stride = stride;
+	if (kms_bo_get_prop(vs->base.planes[0].bo, KMS_HANDLE, &handle))
 		goto error;
 	if (drmPrimeHandleToFD(fd, handle, DRM_CLOEXEC,
 			       &vs->base.planes[0].dmafd))
@@ -864,7 +864,7 @@ vsp2_scaler_create_buffer(struct vsp_scaler_device *scaler, int fd,
 error:
 	if (vs->base.planes[0].dmafd > 0)
 		close(vs->base.planes[0].dmafd);
-	kms_bo_destroy(&vs->base.bo);
+	kms_bo_destroy(&vs->base.planes[0].bo);
 	return -1;
 }
 #endif

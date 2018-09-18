@@ -93,9 +93,6 @@ struct v4l2_surface_state {
 
 	struct v4l2_renderer *renderer;
 
-	struct kms_bo *bo;
-	int bo_stride;
-
 	int num_planes;
 	struct v4l2_renderer_plane planes[VIDEO_MAX_PLANES];
 

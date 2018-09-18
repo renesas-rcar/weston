@@ -1262,7 +1262,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	buffer->width = width;
 	buffer->height = height;
 
-	if (vs->bo && vs->width == buffer->width &&
+	if (vs->planes[0].bo && vs->width == buffer->width &&
 	    vs->height == buffer->height &&
 	    vs->planes[0].stride == stride[0] &&
 	    vs->pixel_format == pixel_format) {
