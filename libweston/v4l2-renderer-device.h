@@ -64,9 +64,7 @@ struct v4l2_renderer_plane {
 	/* for shm buffer */
 	struct kms_bo *bo;
 	void *addr;
-	int bo_stride;
-	int shm_buffer_image_data_stride;
-	int shm_buffer_image_data_height;
+	int height;
 };
 
 #ifdef V4L2_GL_FALLBACK_ENABLED
