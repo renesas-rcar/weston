@@ -1282,8 +1282,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	for (i = 0; i < num_planes; i++) {
 		vs->planes[i].stride = stride[i];
 		vs->planes[i].dmafd = -1;
-		vs->planes[i].length = vs->planes[i].bytesused
-			= stride[i] * plane_height[i];
+		vs->planes[i].length = stride[i] * plane_height[i];
 		vs->planes[i].shm_buffer_image_data_stride = image_data_stride[i];
 		vs->planes[i].shm_buffer_image_data_height = plane_height[i];
 	}
@@ -1510,10 +1509,8 @@ attach_linux_dmabuf_buffer(struct v4l2_surface_state *vs, struct weston_buffer *
 		if ((vs->planes[i].dmafd = dup(dmabuf->attributes.fd[i])) == -1)
 			goto err;
 		vs->planes[i].stride = dmabuf->attributes.stride[i];
-		vs->planes[i].length = vs->planes[i].bytesused
-			= vs->planes[i].stride *
-				v4l2_renderer_plane_height(i, vs->height,
-							   vs->pixel_format);
+		vs->planes[i].length = vs->planes[i].stride *
+				v4l2_renderer_plane_height(i, vs->height, vs->pixel_format);
 	}
 
 	DBG("%s: %dx%d buffer attached (dmabuf=%d, stride=%d).\n", __func__,
@@ -1621,10 +1618,8 @@ attach_wl_kms_buffer(struct v4l2_surface_state *vs, struct weston_buffer *buffer
 		if ((vs->planes[i].dmafd = dup(kbuf->planes[i].fd)) == -1)
 			goto err;
 		vs->planes[i].stride = kbuf->planes[i].stride;
-		vs->planes[i].length = vs->planes[i].bytesused
-			= vs->planes[i].stride *
-				v4l2_renderer_plane_height(i, vs->height,
-							   vs->pixel_format);
+		vs->planes[i].length = vs->planes[i].stride *
+				v4l2_renderer_plane_height(i, vs->height, vs->pixel_format);
 	}
 
 	DBG("%s: %dx%d buffer attached (dmabuf=%d, stride=%d).\n", __func__, kbuf->width, kbuf->height, kbuf->fd, kbuf->stride);

@@ -60,7 +60,6 @@ struct v4l2_renderer_plane {
 	int dmafd;
 	unsigned int stride;
 	unsigned int length;
-	unsigned int bytesused;
 
 	/* for shm buffer */
 	struct kms_bo *bo;
