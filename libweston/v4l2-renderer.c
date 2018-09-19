@@ -1173,19 +1173,17 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		KMS_HEIGHT, 0,
 		KMS_TERMINATE_PROP_LIST
 	};
-	unsigned handle, stride[3];
-	int num_planes, width, height, plane_height[3];
-	unsigned bo_width[3], bo_height[3];
+	unsigned handle, stride, uv_stride = 0;
+	int num_planes, width, height;
+	unsigned bo_width[3];
 	bool multi_sample_pixels = false;
 	int i;
 
 	width = wl_shm_buffer_get_width(shm_buffer);
 	height = wl_shm_buffer_get_height(shm_buffer);
-	stride[0] = (unsigned int)wl_shm_buffer_get_stride(shm_buffer);
+	stride = (unsigned int)wl_shm_buffer_get_stride(shm_buffer);
 
 	num_planes = 1;
-	plane_height[0] = height;
-	bo_height[0] = (unsigned int)height;
 
 	switch (wl_shm_buffer_get_format(shm_buffer)) {
 	case WL_SHM_FORMAT_XRGB8888:
@@ -1212,26 +1210,25 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	case WL_SHM_FORMAT_NV12:
 		pixel_format = V4L2_PIX_FMT_NV12M;
 		num_planes = 2;
-		plane_height[1] = height / 2;
-		stride[1] = stride[0];
+
+		// No odd sizes are expected
+		uv_stride = stride;
 		bo_width[0] = (unsigned int)((width + 2) / 4);
 		bo_width[1] = bo_width[0];
-		bo_height[1] = (unsigned int)((height + 1) / 2);
+
 		multi_sample_pixels = true;
 		break;
 
 	case WL_SHM_FORMAT_YUV420:
 		pixel_format = V4L2_PIX_FMT_YUV420M;
 		num_planes = 3;
-		plane_height[1] = height / 2;
-		plane_height[2] = height / 2;
-		stride[1] = stride[0] / 2;
-		stride[2] = stride[0] / 2;
+
+		// No odd sizes are expected
+		uv_stride = stride / 2;
 		bo_width[0] = (unsigned int)((width + 2) / 4);
-		bo_width[1] = (unsigned int)((width + 4) / 2 / 4);
-		bo_height[1] = (unsigned int)((height + 1) / 2);
+		bo_width[1] = (bo_width[0] + 1) / 2;
+
 		bo_width[2] = bo_width[1];
-		bo_height[2] = bo_height[1];
 		multi_sample_pixels = true;
 		break;
 
@@ -1246,7 +1243,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 
 	if (vs->planes[0].bo && vs->width == buffer->width &&
 	    vs->height == buffer->height &&
-	    vs->planes[0].stride == stride[0] &&
+	    vs->planes[0].stride == stride &&
 	    vs->pixel_format == pixel_format) {
 		// no need to recreate buffer
 		return 0;
@@ -1261,12 +1258,22 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	vs->height = buffer->height;
 	vs->pixel_format = pixel_format;
 	vs->num_planes = num_planes;
-	for (i = 0; i < num_planes; i++) {
-		vs->planes[i].stride = stride[i];
-		vs->planes[i].dmafd = -1;
-		vs->planes[i].length = stride[i] * plane_height[i];
-		vs->planes[i].height = plane_height[i];
+
+	vs->planes[0].dmafd = -1;
+	vs->planes[0].stride = stride;
+	vs->planes[0].height = height;
+	vs->planes[0].length = stride * height;
+
+	if (num_planes > 1) {
+		vs->planes[1].dmafd = -1;
+		vs->planes[1].stride = uv_stride;
+		vs->planes[1].height = height / 2;
+		vs->planes[1].length = uv_stride * height / 2;
+
+		if (num_planes == 3)
+			vs->planes[2] = vs->planes[1];
 	}
+
 	vs->multi_sample_pixels = multi_sample_pixels;
 
 
@@ -1278,7 +1285,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	// create gbm_bo
 	for (i = 0; i < num_planes; i++) {
 		attr[3] = bo_width[i];
-		attr[5] = bo_height[i];
+		attr[5] = (unsigned)vs->planes[i].height;
 
 		if (kms_bo_create(vs->renderer->kms, attr, &vs->planes[i].bo)) {
 			weston_log("kms_bo_create failed.\n");
