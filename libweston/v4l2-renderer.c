@@ -485,7 +485,7 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 {
 	struct v4l2_output_state *vo = get_output_state(output);
 	struct v4l2_bo_state *bo = &vo->bo[vo->bo_index];
-	uint32_t v, len = width * 4;
+	uint32_t v, len = width * 4U;
 	void *src, *dst;
 
 	switch(format) {
@@ -497,7 +497,7 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 
 #ifdef V4L2_GL_FALLBACK_ENABLED
 	if (output->compositor->capabilities & WESTON_CAP_CAPTURE_YFLIP) {
-		src = bo->map + x * 4 + (output->height - (y + height)) * bo->stride;
+		src = bo->map + x * 4U + (output->height - (y + height)) * bo->stride;
 		dst = pixels + len * (height - 1u);
 		for (v = 0; v < height; v++) {
 			memcpy(dst, src, len);
@@ -508,7 +508,7 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 	}
 #endif
 
-	if (x == 0 && y == 0 &&
+	if (x == 0U && y == 0U &&
 	    width == (uint32_t)output->current_mode->width &&
 	    height == (uint32_t)output->current_mode->height &&
 	    bo->stride == len) {
@@ -1173,7 +1173,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		KMS_HEIGHT, 0,
 		KMS_TERMINATE_PROP_LIST
 	};
-	unsigned handle, stride, uv_stride = 0;
+	unsigned handle, stride, uv_stride = 0U;
 	int num_planes, width, height;
 	unsigned bo_width[3];
 	bool multi_sample_pixels = false;
@@ -1198,12 +1198,12 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 
 	case WL_SHM_FORMAT_RGB565:
 		pixel_format = V4L2_PIX_FMT_RGB565;
-		bo_width[0] = (unsigned int)((width + 1) / 2);
+		bo_width[0] = ((unsigned int)width + 1U) / 2U;
 		break;
 
 	case WL_SHM_FORMAT_YUYV:
 		pixel_format = V4L2_PIX_FMT_YUYV;
-		bo_width[0] = (unsigned int)((width + 1) / 2);
+		bo_width[0] = ((unsigned int)width + 1U) / 2U;
 		multi_sample_pixels = true;
 		break;
 
@@ -1213,7 +1213,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 
 		// No odd sizes are expected
 		uv_stride = stride;
-		bo_width[0] = (unsigned int)((width + 2) / 4);
+		bo_width[0] = ((unsigned int)width + 2U) / 4U;
 		bo_width[1] = bo_width[0];
 
 		multi_sample_pixels = true;
@@ -1225,8 +1225,8 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 
 		// No odd sizes are expected
 		uv_stride = stride / 2;
-		bo_width[0] = (unsigned int)((width + 2) / 4);
-		bo_width[1] = (bo_width[0] + 1) / 2;
+		bo_width[0] = ((unsigned int)width + 2U) / 4U;
+		bo_width[1] = (bo_width[0] + 1U) / 2U;
 
 		bo_width[2] = bo_width[1];
 		multi_sample_pixels = true;
@@ -1262,13 +1262,13 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 	vs->planes[0].dmafd = -1;
 	vs->planes[0].stride = stride;
 	vs->planes[0].height = height;
-	vs->planes[0].length = stride * height;
+	vs->planes[0].length = stride * (unsigned int)height;
 
 	if (num_planes > 1) {
 		vs->planes[1].dmafd = -1;
 		vs->planes[1].stride = uv_stride;
 		vs->planes[1].height = height / 2;
-		vs->planes[1].length = uv_stride * height / 2;
+		vs->planes[1].length = uv_stride * (unsigned int)height / 2U;
 
 		if (num_planes == 3)
 			vs->planes[2] = vs->planes[1];
@@ -1333,7 +1333,7 @@ v4l2_renderer_plane_height(int plane, int _height, unsigned int format)
 		case V4L2_PIX_FMT_NV21M:
 		case V4L2_PIX_FMT_YUV420M:
 		case V4L2_PIX_FMT_YVU420M:
-			return height / 2;
+			return height / 2U;
 		case V4L2_PIX_FMT_NV16M:
 		case V4L2_PIX_FMT_NV61M:
 		case V4L2_PIX_FMT_YUV422M:
@@ -1349,7 +1349,7 @@ v4l2_renderer_plane_height(int plane, int _height, unsigned int format)
 		switch (format) {
 		case V4L2_PIX_FMT_YUV420M:
 		case V4L2_PIX_FMT_YVU420M:
-			return height / 2;
+			return height / 2U;
 		case V4L2_PIX_FMT_YUV422M:
 		case V4L2_PIX_FMT_YVU422M:
 		case V4L2_PIX_FMT_YUV444M:
