@@ -956,7 +956,7 @@ vsp2_queue_buffer(int fd, enum v4l2_buf_type type, struct vsp_surface_state *vs)
 	for (i = 0; i < vs->base.num_planes; i++) {
 		buf.m.planes[i].m.fd = vs->base.planes[i].dmafd;
 		buf.m.planes[i].length = vs->base.planes[i].length;
-		buf.m.planes[i].bytesused = vs->base.planes[i].bytesused;
+		buf.m.planes[i].bytesused = vs->base.planes[i].length;
 	}
 
 	if (ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
@@ -968,11 +968,6 @@ vsp2_queue_buffer(int fd, enum v4l2_buf_type type, struct vsp_surface_state *vs)
 	if (type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		for (i = 0; i < vs->base.num_planes; i++) {
 			vs->base.planes[i].length = buf.m.planes[i].length;
-			/* XXX:
-			   Set length value to bytesused because bytesused is
-			   returned 0 from kernel driver. Need to set returned
-			   bytesused value. */
-			vs->base.planes[i].bytesused = buf.m.planes[i].length;
 		}
 	}
 	return 0;
