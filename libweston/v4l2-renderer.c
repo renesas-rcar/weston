@@ -519,7 +519,7 @@ v4l2_renderer_read_pixels(struct weston_output *output,
 		return 0;
 	}
 
-	src = bo->map + x * 4 + y * bo->stride;
+	src = bo->map + x * 4U + y * bo->stride;
 	dst = pixels;
 	for (v = 0; v < height; v++) {
 		memcpy(dst, src, len);
@@ -1224,7 +1224,7 @@ v4l2_renderer_attach_shm(struct v4l2_surface_state *vs, struct weston_buffer *bu
 		num_planes = 3;
 
 		// No odd sizes are expected
-		uv_stride = stride / 2;
+		uv_stride = stride / 2U;
 		bo_width[0] = ((unsigned int)width + 2U) / 4U;
 		bo_width[1] = (bo_width[0] + 1U) / 2U;
 
